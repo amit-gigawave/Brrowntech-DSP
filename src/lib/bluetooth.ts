@@ -7,9 +7,18 @@ export class BluetoothService {
     private device: any | null = null;
     private characteristic: any | null = null;
     private onStateChange: (connected: boolean) => void;
+    private onCommandSent?: (hex: string) => void;
+    private isSimulated = false;
 
-    constructor(onStateChange: (connected: boolean) => void) {
+    constructor(onStateChange: (connected: boolean) => void, onCommandSent?: (hex: string) => void) {
         this.onStateChange = onStateChange;
+        this.onCommandSent = onCommandSent;
+    }
+
+    async simulateConnect() {
+        this.isSimulated = true;
+        this.onStateChange(true);
+        return "BRROWNTECH_VIRTUAL_DEVICE";
     }
 
     async connect() {
@@ -76,16 +85,14 @@ export class BluetoothService {
      * Generic byte array command - now with smart de-duplication and queuing
      */
     async sendCommand(bytes: number[]) {
-        if (!this.characteristic) return;
+        if (!this.characteristic && !this.isSimulated) return;
 
         // Skip adding the new command if it's a redundant fader update for the same target
-        // (e.g. updating volume for channel 1 while another update for channel 1 is in queue)
         if (bytes.length >= 2) {
             const cmdType = bytes[0];
-            const targetId = bytes[1]; // channel or band_index
+            const targetId = bytes[1]; 
             const subType = bytes.length >= 3 ? bytes[2] : null;
 
-            // Remove existing redundant commands from the queue
             this.commandQueue = this.commandQueue.filter(existing => {
                 if (existing[0] !== cmdType) return true;
                 if (existing[1] !== targetId) return true;
@@ -95,13 +102,30 @@ export class BluetoothService {
         }
 
         this.commandQueue.push(bytes);
+
+        // Immediate logging for simulation/debug verification
+        const logBuffer = new Uint8Array(20);
+        logBuffer.set(bytes);
+        const hexString = Array.from(logBuffer)
+            .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+            .join(' ');
         
+        // Final fallback for local testing
+        console.info(`[DSP PROTOCOL] Sending HEX: ${hexString}`);
+        this.onCommandSent?.(hexString);
+
         if (this.isWriting) return;
         this.processQueue();
     }
 
     private async processQueue() {
-        if (this.commandQueue.length === 0 || !this.characteristic || this.isWriting) {
+        if (this.commandQueue.length === 0 || this.isWriting) {
+            return;
+        }
+
+        // If not simulated, we NEED a characteristic to proceed with hardware write
+        if (!this.isSimulated && !this.characteristic) {
+            this.commandQueue = []; // Clear queue if hardware lost
             return;
         }
 
@@ -113,21 +137,27 @@ export class BluetoothService {
             return;
         }
 
-        const buffer = new Uint8Array(bytes);
+        if (this.isSimulated) {
+            this.isWriting = false;
+            // Loop back quickly for simulation
+            setTimeout(() => this.processQueue(), 10);
+            return;
+        }
+
+        const paddedBuffer = new Uint8Array(20);
+        paddedBuffer.set(bytes);
         
         try {
             if (this.characteristic.properties.writeWithoutResponse) {
-                await this.characteristic.writeValueWithoutResponse(buffer);
+                await this.characteristic.writeValueWithoutResponse(paddedBuffer);
             } else {
-                await this.characteristic.writeValueWithResponse(buffer);
+                await this.characteristic.writeValueWithResponse(paddedBuffer);
             }
         } catch (e) {
             console.error("DSP Command failed", e);
         }
 
         this.isWriting = false;
-        
-        // Small 20ms cooldown to prevent flooding the hardware
         setTimeout(() => this.processQueue(), 20);
     }
 

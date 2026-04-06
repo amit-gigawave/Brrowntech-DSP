@@ -11,12 +11,22 @@ interface SliderProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 
 }
 
 const Slider = React.forwardRef<HTMLInputElement, SliderProps>(
-    ({ className, onValueChange, value, orientation = "horizontal", ...props }, ref) => {
+    ({ className, onValueChange, value, defaultValue, orientation = "horizontal", ...props }, ref) => {
+        const [localValue, setLocalValue] = React.useState(value?.[0] ?? defaultValue?.[0] ?? 0);
+
+        React.useEffect(() => {
+            if (value !== undefined) {
+                setLocalValue(value[0]);
+            }
+        }, [value]);
+
         const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-            onValueChange?.([parseFloat(e.target.value)]);
+            const newValue = parseFloat(e.target.value);
+            setLocalValue(newValue);
+            onValueChange?.([newValue]);
         };
 
-        const currentValue = value?.[0] ?? props.defaultValue?.[0] ?? 0;
+        const currentValue = localValue;
         const min = parseFloat(props.min?.toString() || "0");
         const max = parseFloat(props.max?.toString() || "100");
         const percentage = ((currentValue - min) / (max - min)) * 100;

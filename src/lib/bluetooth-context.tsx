@@ -1,12 +1,14 @@
 "use client";
 
-import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
+import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
 import { BluetoothService } from './bluetooth';
 
 interface BluetoothContextType {
     isConnected: boolean;
     deviceName: string | null;
+    commandLogs: string[];
     connect: () => Promise<void>;
+    simulateConnect: () => Promise<void>;
     disconnect: () => Promise<void>;
     setVolume: (channel: number, level: number) => Promise<void>;
     selectInput: (source: number) => Promise<void>;
@@ -23,13 +25,18 @@ const BluetoothContext = createContext<BluetoothContextType | undefined>(undefin
 export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [isConnected, setIsConnected] = useState(false);
     const [deviceName, setDeviceName] = useState<string | null>(null);
+    const [commandLogs, setCommandLogs] = useState<string[]>([]);
     const serviceRef = useRef<BluetoothService | null>(null);
+
+    const logCommand = useCallback((hex: string) => {
+        setCommandLogs(prev => [hex, ...prev].slice(0, 50));
+    }, []);
 
     if (!serviceRef.current) {
         serviceRef.current = new BluetoothService((status) => {
             setIsConnected(status);
             if (!status) setDeviceName(null);
-        });
+        }, logCommand);
     }
 
     const connect = async () => {
@@ -40,6 +47,11 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             console.error(error);
             throw error;
         }
+    };
+
+    const simulateConnect = async () => {
+        const name = await serviceRef.current?.simulateConnect();
+        setDeviceName(name || "SIMULATED_DEVICE");
     };
 
     const disconnect = async () => {
@@ -57,7 +69,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     return (
         <BluetoothContext.Provider value={{ 
-            isConnected, deviceName, connect, disconnect, 
+            isConnected, deviceName, commandLogs, connect, simulateConnect, disconnect, 
             setVolume, selectInput, setEQ, setSubwooferParam, 
             setPhase, setReverb, setEcho, toggleFeature 
         }}>
