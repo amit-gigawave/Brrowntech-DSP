@@ -8,6 +8,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 const DebugConsole = () => {
     const { isConnected, commandLogs, simulateConnect } = useBluetooth();
     const [isExpanded, setIsExpanded] = useState(false);
+    const [isMounted, setIsMounted] = React.useState(false);
+
+    React.useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
+    if (!isMounted) return null;
 
     if (!isConnected && commandLogs.length === 0) {
         return (

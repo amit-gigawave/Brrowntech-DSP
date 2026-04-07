@@ -79,39 +79,41 @@ export class BluetoothService {
     }
 
     private isWriting = false;
-    private commandQueue: number[][] = [];
+    private commandQueue: Uint8Array[] = []; // Unified binary queue
 
     /**
-     * Generic byte array command - now with smart de-duplication and queuing
+     * Generic byte array command - now with exact-length binary queuing
      */
     async sendCommand(bytes: number[]) {
         if (!this.characteristic && !this.isSimulated) return;
 
-        // Skip adding the new command if it's a redundant fader update for the same target
+        // Restore: Hardware-ready 20-byte fixed length frame
+        const binaryPacket = new Uint8Array(20);
+        for (let i = 0; i < bytes.length && i < 20; i++) {
+            binaryPacket[i] = bytes[i];
+        }
+
+        // De-duplication Logic
         if (bytes.length >= 2) {
             const cmdType = bytes[0];
-            const targetId = bytes[1]; 
+            const targetId = bytes[1];
             const subType = bytes.length >= 3 ? bytes[2] : null;
 
             this.commandQueue = this.commandQueue.filter(existing => {
                 if (existing[0] !== cmdType) return true;
                 if (existing[1] !== targetId) return true;
                 if (subType !== null && existing[2] !== subType) return true;
-                return false; 
+                return false;
             });
         }
 
-        this.commandQueue.push(bytes);
+        this.commandQueue.push(binaryPacket);
 
-        // Immediate logging for simulation/debug verification
-        const logBuffer = new Uint8Array(20);
-        logBuffer.set(bytes);
-        const hexString = Array.from(logBuffer)
+        // Debug Logging
+        const hexString = Array.from(binaryPacket)
             .map(b => b.toString(16).padStart(2, '0').toUpperCase())
             .join(' ');
-        
-        // Final fallback for local testing
-        console.info(`[DSP PROTOCOL] Sending HEX: ${hexString}`);
+        console.info(`[DSP BINARY] Sending ${bytes.length} bytes as 20B Hex: ${hexString}`);
         this.onCommandSent?.(hexString);
 
         if (this.isWriting) return;
@@ -119,46 +121,42 @@ export class BluetoothService {
     }
 
     private async processQueue() {
-        if (this.commandQueue.length === 0 || this.isWriting) {
-            return;
-        }
+        if (this.commandQueue.length === 0 || this.isWriting) return;
 
-        // If not simulated, we NEED a characteristic to proceed with hardware write
         if (!this.isSimulated && !this.characteristic) {
-            this.commandQueue = []; // Clear queue if hardware lost
+            this.commandQueue = [];
             return;
         }
 
         this.isWriting = true;
+        const packet = this.commandQueue.shift();
         
-        const bytes = this.commandQueue.shift();
-        if (!bytes) {
+        if (!packet) {
             this.isWriting = false;
             return;
         }
 
         if (this.isSimulated) {
             this.isWriting = false;
-            // Loop back quickly for simulation
             setTimeout(() => this.processQueue(), 10);
             return;
         }
 
-        const paddedBuffer = new Uint8Array(20);
-        paddedBuffer.set(bytes);
-        
         try {
+            // Sending the EXACT length of the packet as requested by the hardware
             if (this.characteristic.properties.writeWithoutResponse) {
-                await this.characteristic.writeValueWithoutResponse(paddedBuffer);
+                await this.characteristic.writeValueWithoutResponse(packet);
             } else {
-                await this.characteristic.writeValueWithResponse(paddedBuffer);
+                await this.characteristic.writeValueWithResponse(packet);
             }
         } catch (e) {
-            console.error("DSP Command failed", e);
+            console.error("DSP Hardware binary write failed", e);
+            this.commandQueue = []; // Clear queue on error to prevent cascading failures
         }
 
         this.isWriting = false;
-        setTimeout(() => this.processQueue(), 20);
+        // Increased cooldown to 50ms for slower hardware stability
+        setTimeout(() => this.processQueue(), 50);
     }
 
     // 0x01: Input Select (1=BT, 2=AUX, 3=OPT, 4=COAX)
