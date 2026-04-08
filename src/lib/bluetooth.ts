@@ -22,40 +22,39 @@ export class BluetoothService {
     }
 
     async connect() {
+        const SERVICE_UUID = '0000ab00-0000-1000-8000-00805f9b34fb';
+        const CHARACTERISTIC_UUID = '0000ab01-0000-1000-8000-00805f9b34fb';
+
+        if (typeof window === 'undefined' || !(navigator as any).bluetooth) {
+            console.error("Web Bluetooth is not supported on this browser or environment.");
+            alert("Bluetooth requires Chrome, Edge, or Bluefy (iOS) on an HTTPS connection.");
+            return;
+        }
+
         try {
-            // Request device - accepting all for discovery
+            console.log("Initiating hardware discovery (Service: 0xAB00)...");
+            
+            // Allow discovery of the specific BP10 service
             this.device = await (navigator as any).bluetooth.requestDevice({
-                acceptAllDevices: true,
-                // These are common services for serial-to-BLE modules
-                optionalServices: [
-                    '0000ffe0-0000-1000-8000-00805f9b34fb', // Common serial
-                    '6e400001-b5a3-f393-e0a9-e50e24dcca9e', // Nordic NUS
-                    '00001801-0000-1000-8000-00805f9b34fb', // Generic Attribute
-                ]
+                filters: [{ services: [SERVICE_UUID] }],
+                optionalServices: [SERVICE_UUID]
             });
 
+            console.log(`Hardware found: ${this.device.name}. Connecting to GATT...`);
             const server = await this.device.gatt?.connect();
             if (!server) throw new Error("Failed to connect to GATT server");
 
             this.onStateChange(true);
 
-            // Discover and find the first writable characteristic
-            const services = await server.getPrimaryServices();
-            for (const service of services) {
-                const characteristics = await service.getCharacteristics();
-                for (const char of characteristics) {
-                    if (char.properties.write || char.properties.writeWithoutResponse) {
-                        this.characteristic = char;
-                        console.log(`Using characteristic: ${char.uuid} for command transmission`);
-                        break;
-                    }
-                }
-                if (this.characteristic) break;
-            }
+            // Connect specifically to the requested Service and Characteristic
+            const service = await server.getPrimaryService(SERVICE_UUID);
+            this.characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
 
             if (!this.characteristic) {
-                throw new Error("No writable characteristic found on this device");
+                throw new Error("Specified Write Characteristic (0xAB01) not found");
             }
+
+            console.log(`Successfully connected to BP10 Command Endpoint: ${CHARACTERISTIC_UUID}`);
 
             this.device.addEventListener('gattserverdisconnected', () => {
                 this.onStateChange(false);
@@ -66,7 +65,7 @@ export class BluetoothService {
             return this.device.name;
         } catch (error) {
             this.onStateChange(false);
-            console.error("Bluetooth connection failed", error);
+            console.error("Hardware-level connection failed", error);
             throw error;
         }
     }
@@ -87,10 +86,13 @@ export class BluetoothService {
     async sendCommand(bytes: number[]) {
         if (!this.characteristic && !this.isSimulated) return;
 
-        // Restore: Hardware-ready 20-byte fixed length frame
-        const binaryPacket = new Uint8Array(20);
-        for (let i = 0; i < bytes.length && i < 20; i++) {
-            binaryPacket[i] = bytes[i];
+        // Command with Serial Termination: \r (0x0D) and \n (0x0A)
+        const payloadWithTerminators = [...bytes, 0x0D, 0x0A];
+
+        // Create a Raw Byte Array of the EXACT length required (Variable length)
+        const binaryPacket = new Uint8Array(payloadWithTerminators.length);
+        for (let i = 0; i < payloadWithTerminators.length; i++) {
+            binaryPacket[i] = payloadWithTerminators[i];
         }
 
         // De-duplication Logic
@@ -113,7 +115,6 @@ export class BluetoothService {
         const hexString = Array.from(binaryPacket)
             .map(b => b.toString(16).padStart(2, '0').toUpperCase())
             .join(' ');
-        console.info(`[DSP BINARY] Sending ${bytes.length} bytes as 20B Hex: ${hexString}`);
         this.onCommandSent?.(hexString);
 
         if (this.isWriting) return;
@@ -136,22 +137,26 @@ export class BluetoothService {
             return;
         }
 
+        // Format raw hex for the trace
+        const hexTrace = Array.from(packet)
+            .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+            .join(' ');
+
         if (this.isSimulated) {
+            console.log(`[SIMULATOR] ==> ${hexTrace}`);
             this.isWriting = false;
             setTimeout(() => this.processQueue(), 10);
             return;
         }
 
+        console.log(`[HARDWARE_BLE] ==> ${hexTrace}`);
+
         try {
-            // Sending the EXACT length of the packet as requested by the hardware
-            if (this.characteristic.properties.writeWithoutResponse) {
-                await this.characteristic.writeValueWithoutResponse(packet);
-            } else {
-                await this.characteristic.writeValueWithResponse(packet);
-            }
+            // Hardware-specific: Using writeValueWithoutResponse for 0xAB01
+            await this.characteristic.writeValueWithoutResponse(packet);
         } catch (e) {
-            console.error("DSP Hardware binary write failed", e);
-            this.commandQueue = []; // Clear queue on error to prevent cascading failures
+            console.error("DSP Hardware binary write (WithoutResponse) failed", e);
+            this.commandQueue = []; // Clear queue on error
         }
 
         this.isWriting = false;
