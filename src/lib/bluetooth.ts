@@ -26,35 +26,44 @@ export class BluetoothService {
         const CHARACTERISTIC_UUID = '0000ab01-0000-1000-8000-00805f9b34fb';
 
         if (typeof window === 'undefined' || !(navigator as any).bluetooth) {
-            console.error("Web Bluetooth is not supported on this browser or environment.");
-            alert("Bluetooth requires Chrome, Edge, or Bluefy (iOS) on an HTTPS connection.");
+            console.error("Web Bluetooth is not supported.");
+            alert("Bluetooth requires an HTTPS connection and a compatible browser (Chrome/Edge/Bluefy).");
             return;
         }
 
         try {
-            console.log("Initiating hardware discovery (Service: 0xAB00)...");
-            
-            // Allow discovery of the specific BP10 service
+            console.log("Searching for DSP Hardware...");
             this.device = await (navigator as any).bluetooth.requestDevice({
                 filters: [{ services: [SERVICE_UUID] }],
-                optionalServices: [SERVICE_UUID]
+                optionalServices: [SERVICE_UUID, 'device_information', 'generic_access']
             });
 
-            console.log(`Hardware found: ${this.device.name}. Connecting to GATT...`);
             const server = await this.device.gatt?.connect();
-            if (!server) throw new Error("Failed to connect to GATT server");
+            if (!server) throw new Error("GATT Connection Failed");
 
-            this.onStateChange(true);
+            // --- AGGRESSIVE DISCOVERY (Mimicking BLE Scan App) ---
+            // We "walk" the services to wake up the hardware's attribute table
+            console.log("Analyzing Hardware Protocol...");
+            const services = await server.getPrimaryServices();
+            for (const s of services) {
+                // Just reading characteristic list pokes the device's internal handles
+                await s.getCharacteristics().catch(() => []);
+            }
 
-            // Connect specifically to the requested Service and Characteristic
             const service = await server.getPrimaryService(SERVICE_UUID);
             this.characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
 
             if (!this.characteristic) {
-                throw new Error("Specified Write Characteristic (0xAB01) not found");
+                throw new Error("Target Endpoint 0xAB01 not found.");
             }
 
-            console.log(`Successfully connected to BP10 Command Endpoint: ${CHARACTERISTIC_UUID}`);
+            // Post-connection "Settling" Period (500ms)
+            // Gives the hardware time to stabilize after the intensive scan
+            console.log("Hardware Syncing... Please wait.");
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            this.onStateChange(true);
+            console.log("System Online & Ready.");
 
             this.device.addEventListener('gattserverdisconnected', () => {
                 this.onStateChange(false);
@@ -65,7 +74,7 @@ export class BluetoothService {
             return this.device.name;
         } catch (error) {
             this.onStateChange(false);
-            console.error("Hardware-level connection failed", error);
+            console.error("Connection Interrupted", error);
             throw error;
         }
     }
