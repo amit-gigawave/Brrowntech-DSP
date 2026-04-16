@@ -35,37 +35,94 @@ export class BluetoothService {
             console.log("Searching for DSP Hardware...");
             this.device = await (navigator as any).bluetooth.requestDevice({
                 filters: [{ services: [SERVICE_UUID] }],
-                optionalServices: [SERVICE_UUID, 'device_information', 'generic_access']
+                optionalServices: [
+                    SERVICE_UUID, 
+                    'device_information', 
+                    'generic_access', 
+                    'generic_attribute',
+                    0x1800, 0x1801, 0x180A // Explicit platform IDs
+                ]
             });
 
+            console.log(`Hardware Located: ${this.device.name}. Establishing Tunnel...`);
             const server = await this.device.gatt?.connect();
             if (!server) throw new Error("GATT Connection Failed");
 
-            // --- AGGRESSIVE DISCOVERY (Mimicking BLE Scan App) ---
-            // We "walk" the services to wake up the hardware's attribute table
-            console.log("Analyzing Hardware Protocol...");
+            // --- AGGRESSIVE SCANNER-MIRRORING WALKER ---
+            // Professional scanners work because they perform an 'Exhaustive Discovery'.
+            // Many BLE-to-Serial chips won't process UART data until the GATT table is fully indexed.
+            console.log("Synchronizing Attribute Table (Full Discovery)...");
+            
             const services = await server.getPrimaryServices();
-            for (const s of services) {
-                // Just reading characteristic list pokes the device's internal handles
-                await s.getCharacteristics().catch(() => []);
+            let mainService = null;
+            
+            for (const service of services) {
+                console.log(`> Indexing Service: ${service.uuid}`);
+                
+                // Track our target service
+                if (service.uuid.toLowerCase().includes('ab00')) {
+                    mainService = service;
+                }
+
+                // Discover all characteristics for this service
+                const characteristics = await service.getCharacteristics().catch(() => []);
+                
+                for (const char of characteristics) {
+                    // 1. Read 'Device Name' or 'Manufacturer' to wake up the radio logic
+                    if (char.properties.read) {
+                        try {
+                            await char.readValue();
+                            console.log(`  - Validated Attribute: ${char.uuid}`);
+                        } catch(e) {}
+                    }
+                    
+                    // 2. Mirror scanner behavior: If it notifies, we MUST subscribe 
+                    // This is the #1 reason devices 'lock up' after one command (awaiting ACK loop)
+                    if (char.properties.notify || char.properties.indicate) {
+                        await char.startNotifications().catch(() => null);
+                    }
+                }
+
+                // Small breather for the hardware bridge
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
 
-            const service = await server.getPrimaryService(SERVICE_UUID);
-            this.characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+            if (!mainService) {
+                console.log("Forcing secondary lookup for 0xAB00...");
+                mainService = await server.getPrimaryService(SERVICE_UUID);
+            }
+
+            this.characteristic = await mainService.getCharacteristic(CHARACTERISTIC_UUID);
 
             if (!this.characteristic) {
                 throw new Error("Target Endpoint 0xAB01 not found.");
             }
 
-            // Post-connection "Settling" Period (500ms)
-            // Gives the hardware time to stabilize after the intensive scan
-            console.log("Hardware Syncing... Please wait.");
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // --- REDUNDANCY: Activate our specific feedback loop ---
+            if (this.characteristic.properties.notify) {
+                this.characteristic.addEventListener('characteristicvaluechanged', (event: any) => {
+                    const target = event.target as any;
+                    const val = target?.value;
+                    if (val) console.log(`[HARDWARE] <== ACK Received (${val.byteLength} bytes)`);
+                });
+                await this.characteristic.startNotifications().catch(() => null);
+            }
+
+            // Final Path Validation
+            if (this.characteristic.properties.read) {
+                await this.characteristic.readValue().catch(() => null);
+            }
+
+            // CRITICAL: Post-Discovery "Settle" Delay
+            // Hardware needs time to write its internal CCCD values to flash/EEPROM
+            console.log("Tunnel Stable. Finalizing Sync...");
+            await new Promise(resolve => setTimeout(resolve, 1200));
             
             this.onStateChange(true);
-            console.log("System Online & Ready.");
+            console.log("BP10 ONLINE & READY.");
 
             this.device.addEventListener('gattserverdisconnected', () => {
+                console.warn("Hardware Disconnected. Cleaning Handles...");
                 this.onStateChange(false);
                 this.device = null;
                 this.characteristic = null;
@@ -74,60 +131,60 @@ export class BluetoothService {
             return this.device.name;
         } catch (error) {
             this.onStateChange(false);
-            console.error("Connection Interrupted", error);
+            console.error("Connection Loop Terminated", error);
             throw error;
         }
     }
 
     async disconnect() {
-        if (this.device?.gatt?.connected) {
-            await this.device.gatt.disconnect();
+        try {
+            if (this.characteristic?.properties?.notify) {
+                await this.characteristic.stopNotifications().catch(() => null);
+            }
+            if (this.device?.gatt?.connected) {
+                await this.device.gatt.disconnect();
+            }
+        } catch (e) {
+            console.warn("Cleanup error", e);
+        } finally {
+            this.onStateChange(false);
+            this.device = null;
+            this.characteristic = null;
         }
-        this.onStateChange(false);
     }
 
     private isWriting = false;
-    private commandQueue: Uint8Array[] = []; // Unified binary queue
+    private commandQueue: Uint8Array[] = [];
 
-    /**
-     * Generic byte array command - now with exact-length binary queuing
-     */
     async sendCommand(bytes: number[]) {
         if (!this.characteristic && !this.isSimulated) return;
 
-        // Command with Serial Termination: \r (0x0D) and \n (0x0A)
-        const payloadWithTerminators = [...bytes, 0x0D, 0x0A];
+        // BP10 Protocol requires 0x0D 0x0A (CRLF) termination
+        const payload = [...bytes, 0x0D, 0x0A];
+        const packet = new Uint8Array(payload.length);
+        packet.set(payload);
 
-        // Create a Raw Byte Array of the EXACT length required (Variable length)
-        const binaryPacket = new Uint8Array(payloadWithTerminators.length);
-        for (let i = 0; i < payloadWithTerminators.length; i++) {
-            binaryPacket[i] = payloadWithTerminators[i];
-        }
-
-        // De-duplication Logic
+        // Smart De-duplication Logic
         if (bytes.length >= 2) {
-            const cmdType = bytes[0];
-            const targetId = bytes[1];
-            const subType = bytes.length >= 3 ? bytes[2] : null;
+            const cmd = bytes[0];
+            const target = bytes[1];
+            const sub = bytes.length >= 3 ? bytes[2] : null;
 
-            this.commandQueue = this.commandQueue.filter(existing => {
-                if (existing[0] !== cmdType) return true;
-                if (existing[1] !== targetId) return true;
-                if (subType !== null && existing[2] !== subType) return true;
+            this.commandQueue = this.commandQueue.filter(q => {
+                if (q[0] !== cmd) return true;
+                if (q[1] !== target) return true;
+                if (sub !== null && q[2] !== sub) return true;
                 return false;
             });
         }
 
-        this.commandQueue.push(binaryPacket);
+        this.commandQueue.push(packet);
 
-        // Debug Logging
-        const hexString = Array.from(binaryPacket)
-            .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-            .join(' ');
-        this.onCommandSent?.(hexString);
+        // UI Feedback
+        const hex = Array.from(packet).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+        this.onCommandSent?.(hex);
 
-        if (this.isWriting) return;
-        this.processQueue();
+        if (!this.isWriting) this.processQueue();
     }
 
     private async processQueue() {
@@ -146,83 +203,68 @@ export class BluetoothService {
             return;
         }
 
-        // Format raw hex for the trace
-        const hexTrace = Array.from(packet)
-            .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-            .join(' ');
-
         if (this.isSimulated) {
-            console.log(`[SIMULATOR] ==> ${hexTrace}`);
+            console.log(`[SIMULATOR] ==> ${packet}`);
             this.isWriting = false;
             setTimeout(() => this.processQueue(), 10);
             return;
         }
 
-        console.log(`[HARDWARE_BLE] ==> ${hexTrace}`);
-
         try {
-            // Hardware-specific: Using writeValueWithoutResponse for 0xAB01
-            await this.characteristic.writeValueWithoutResponse(packet);
+            // RELIABILITY: Hybrid Write Logic
+            const props = this.characteristic.properties;
+            if (props.write) {
+                await this.characteristic.writeValueWithResponse(packet);
+            } else {
+                await this.characteristic.writeValueWithoutResponse(packet);
+            }
         } catch (e) {
-            console.error("DSP Hardware binary write (WithoutResponse) failed", e);
-            this.commandQueue = []; // Clear queue on error
+            console.error("Write failed", e);
+            this.commandQueue = []; // Clear queue on hardware fault
+        } finally {
+            this.isWriting = false;
+            // Cooldown for hardware stability
+            setTimeout(() => this.processQueue(), 80);
         }
-
-        this.isWriting = false;
-        // Increased cooldown to 50ms for slower hardware stability
-        setTimeout(() => this.processQueue(), 50);
     }
 
-    // 0x01: Input Select (1=BT, 2=AUX, 3=OPT, 4=COAX)
-    async selectInput(source: number) {
-        await this.sendCommand([0x01, source]);
-    }
+    // --- Command Set ---
 
-    // 0x02: PT2258 Channel (1=FL, 2=FR, 3=RL, 4=RR, 5=ALL)
-    async setVolume(channel: number, level: number) {
-        await this.sendCommand([0x02, channel, Math.min(16, Math.max(0, level))]);
+    async selectInput(source: number) { 
+        await this.sendCommand([0x01, source]); 
     }
-
-    // 0x04: EQ Param (band 0-9, param_type: 3=Q, 4=Gain)
-    // Gain is Q8.8, Q is Q6.10
+    
+    async setVolume(ch: number, vol: number) { 
+        await this.sendCommand([0x02, ch, Math.min(16, Math.max(0, vol))]); 
+    }
+    
     async setEQ(band: number, type: number, value: number) {
-        let storedValue = 0;
-        if (type === 4) { // Gain
-            storedValue = Math.round(value * 256);
-        } else if (type === 3) { // Q
-            storedValue = Math.round(value * 1024);
-        } else { // F0 or others
-            storedValue = Math.round(value);
-        }
+        let val = 0;
+        if (type === 4) val = Math.round(value * 256);      // Gain Q8.8
+        else if (type === 3) val = Math.round(value * 1024); // Q Q6.10
+        else val = Math.round(value);
         
-        const lo = storedValue & 0xFF;
-        const hi = (storedValue >> 8) & 0xFF;
-        await this.sendCommand([0x04, band, type, lo, hi]);
+        await this.sendCommand([0x04, band, type, val & 0xFF, (val >> 8) & 0xFF]);
     }
 
-    // 0x07: DAC_X EQ (0=Bass Boost Gain, 1=LPF Freq)
     async setSubwooferParam(id: number, value: number) {
-        let val = id === 0 ? Math.round(value * 256) : Math.round(value);
+        const val = id === 0 ? Math.round(value * 256) : Math.round(value);
         await this.sendCommand([0x07, id, val & 0xFF, (val >> 8) & 0xFF]);
     }
 
-    // 0x08: Phase (0=0, 1=180)
-    async setPhase(channel: number, phase: number) {
-        await this.sendCommand([0x08, channel, phase]);
+    async setPhase(ch: number, ph: number) { 
+        await this.sendCommand([0x08, ch, ph]); 
     }
-
-    // 0x0B: Reverb (0=Dry, 1=Wet, 2=Width, 3=Room, 4=Damp)
-    async setReverb(paramId: number, value: number) {
-        await this.sendCommand([0x0B, paramId, value & 0xFF, (value >> 8) & 0xFF]);
+    
+    async setReverb(id: number, val: number) { 
+        await this.sendCommand([0x0B, id, val & 0xFF, (val >> 8) & 0xFF]); 
     }
-
-    // 0x0C: Echo (0=Freq, 1=Atten, 2=Delay, 3=Dry, 4=Wet)
-    async setEcho(paramId: number, value: number) {
-        await this.sendCommand([0x0C, paramId, value & 0xFF, (value >> 8) & 0xFF]);
+    
+    async setEcho(id: number, val: number) { 
+        await this.sendCommand([0x0C, id, val & 0xFF, (val >> 8) & 0xFF]); 
     }
-
-    // Switches (0x0D=Vocal, 0x0E=Stereo, 0x0F=3D)
-    async toggleFeature(cmd: number, on: boolean) {
-        await this.sendCommand([cmd, on ? 1 : 0]);
+    
+    async toggleFeature(cmd: number, on: boolean) { 
+        await this.sendCommand([cmd, on ? 1 : 0]); 
     }
 }
