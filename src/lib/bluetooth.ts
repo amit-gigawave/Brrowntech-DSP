@@ -22,117 +22,84 @@ export class BluetoothService {
     }
 
     async connect() {
+        // BP10 Custom Protocol UUIDs
         const SERVICE_UUID = '0000ab00-0000-1000-8000-00805f9b34fb';
         const CHARACTERISTIC_UUID = '0000ab01-0000-1000-8000-00805f9b34fb';
 
         if (typeof window === 'undefined' || !(navigator as any).bluetooth) {
             console.error("Web Bluetooth is not supported.");
-            alert("Bluetooth requires an HTTPS connection and a compatible browser (Chrome/Edge/Bluefy).");
+            alert("Bluetooth is missing. \n\n• iOS: Use the 'Bluefy' browser.\n• Android: Use Chrome.\n• PC: Use Chrome/Edge.");
             return;
         }
 
         try {
-            console.log("Searching for DSP Hardware...");
+            console.log("Stage 1: Hardware Filtering...");
             this.device = await (navigator as any).bluetooth.requestDevice({
                 filters: [{ services: [SERVICE_UUID] }],
-                optionalServices: [
-                    SERVICE_UUID, 
-                    'device_information', 
-                    'generic_access', 
-                    'generic_attribute',
-                    0x1800, 0x1801, 0x180A // Explicit platform IDs
-                ]
+                optionalServices: [SERVICE_UUID, 'device_information', 'generic_access']
             });
 
-            console.log(`Hardware Located: ${this.device.name}. Establishing Tunnel...`);
+            console.log(`Stage 2: Linking to ${this.device.name}...`);
             const server = await this.device.gatt?.connect();
-            if (!server) throw new Error("GATT Connection Failed");
+            if (!server) throw new Error("GATT Link Failure");
 
-            // --- AGGRESSIVE SCANNER-MIRRORING WALKER ---
-            // Professional scanners work because they perform an 'Exhaustive Discovery'.
-            // Many BLE-to-Serial chips won't process UART data until the GATT table is fully indexed.
-            console.log("Synchronizing Attribute Table (Full Discovery)...");
+            // --- MOBILE STABILITY OPTIMIZATION ---
+            // Large walk-throughs (getPrimaryServices) often crash mobile BLE stacks.
+            // We switch to a targeted discovery model that is fast yet thorough enough to 'wake' the chip.
+            console.log("Stage 3: Protocol Negotiation...");
             
-            const services = await server.getPrimaryServices();
-            let mainService = null;
-            
-            for (const service of services) {
-                console.log(`> Indexing Service: ${service.uuid}`);
-                
-                // Track our target service
-                if (service.uuid.toLowerCase().includes('ab00')) {
-                    mainService = service;
-                }
-
-                // Discover all characteristics for this service
-                const characteristics = await service.getCharacteristics().catch(() => []);
-                
-                for (const char of characteristics) {
-                    // 1. Read 'Device Name' or 'Manufacturer' to wake up the radio logic
-                    if (char.properties.read) {
-                        try {
-                            await char.readValue();
-                            console.log(`  - Validated Attribute: ${char.uuid}`);
-                        } catch(e) {}
-                    }
-                    
-                    // 2. Mirror scanner behavior: If it notifies, we MUST subscribe 
-                    // This is the #1 reason devices 'lock up' after one command (awaiting ACK loop)
-                    if (char.properties.notify || char.properties.indicate) {
-                        await char.startNotifications().catch(() => null);
-                    }
-                }
-
-                // Small breather for the hardware bridge
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-
-            if (!mainService) {
-                console.log("Forcing secondary lookup for 0xAB00...");
-                mainService = await server.getPrimaryService(SERVICE_UUID);
-            }
-
+            // 1. Precise Service Discovery
+            const mainService = await server.getPrimaryService(SERVICE_UUID);
             this.characteristic = await mainService.getCharacteristic(CHARACTERISTIC_UUID);
 
             if (!this.characteristic) {
-                throw new Error("Target Endpoint 0xAB01 not found.");
+                throw new Error("Target Endpoint 0xAB01 not responding.");
             }
 
-            // --- REDUNDANCY: Activate our specific feedback loop ---
+            // 2. Hardware 'Execute' Signal (Notifications)
+            // Mirroring BLE scanner: Activating feedback loop signals 'App Ready' to the DSP
             if (this.characteristic.properties.notify) {
                 this.characteristic.addEventListener('characteristicvaluechanged', (event: any) => {
                     const target = event.target as any;
                     const val = target?.value;
-                    if (val) console.log(`[HARDWARE] <== ACK Received (${val.byteLength} bytes)`);
+                    if (val) console.log(`[HARDWARE] <== ACK (${val.byteLength} bytes)`);
                 });
+                
+                console.log("  > Activating Real-time Channel...");
                 await this.characteristic.startNotifications().catch(() => null);
             }
 
-            // Final Path Validation
+            // 3. Warm-up Poke (Reading Generic Info)
+            // Reading the characteristic once force-refreshes the device's internal attribute pointer
             if (this.characteristic.properties.read) {
                 await this.characteristic.readValue().catch(() => null);
             }
 
-            // CRITICAL: Post-Discovery "Settle" Delay
-            // Hardware needs time to write its internal CCCD values to flash/EEPROM
-            console.log("Tunnel Stable. Finalizing Sync...");
-            await new Promise(resolve => setTimeout(resolve, 1200));
+            // 4. Settling Period
+            // Mobile devices need a moment to stabilize the radio after MTU negotiation
+            console.log("Stage 4: Finalizing Bridge...");
+            await new Promise(resolve => setTimeout(resolve, 800));
             
             this.onStateChange(true);
-            console.log("BP10 ONLINE & READY.");
+            console.log("BP10 STATUS: ONLINE");
 
             this.device.addEventListener('gattserverdisconnected', () => {
-                console.warn("Hardware Disconnected. Cleaning Handles...");
+                console.warn("Signal Lost. Cleaning session...");
                 this.onStateChange(false);
                 this.device = null;
                 this.characteristic = null;
             });
 
             return this.device.name;
-        } catch (error) {
+        } catch (error: any) {
             this.onStateChange(false);
-            console.error("Connection Loop Terminated", error);
-            throw error;
+            // Handle User Cancelled specially to avoid noisy alerts
+            if (error.name === 'NotFoundError') {
+                console.log("Selection Cancelled by User");
+            } else {
+                console.error("Critical Connection Error:", error);
+                throw error;
+            }
         }
     }
 
