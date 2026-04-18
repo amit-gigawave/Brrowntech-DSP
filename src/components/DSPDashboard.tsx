@@ -1,317 +1,366 @@
 "use client";
 
-import React, { useState } from 'react';
-import { useBluetooth } from '@/lib/bluetooth-context';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Slider } from '@/components/ui/slider';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { 
-    Settings2, Sliders, Waves, 
-    Mic2, Layers, Speaker, Zap,
-    Bluetooth, Radio, Cable, Disc,
-    Lock
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState } from "react";
+import { useBluetooth } from "@/lib/bluetooth-context";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Slider } from "@/components/ui/slider";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+    AudioLines,
+    Bluetooth,
+    Cable,
+    Disc,
+    Equal,
+    Layers,
+    Lock,
+    Radio,
+    SlidersHorizontal,
+    Speaker,
+    Waves,
+    Zap,
+} from "lucide-react";
+import { motion } from "framer-motion";
+
+const INPUT_OPTIONS = [
+    { id: 1, label: "Line In", short: "LINE", icon: Cable },
+    { id: 2, label: "Bluetooth", short: "BT", icon: Bluetooth },
+    { id: 3, label: "Optical", short: "OPT", icon: Zap },
+    { id: 4, label: "Coaxial", short: "COAX", icon: Disc },
+];
+
+const CHANNELS = [
+    { id: 1, label: "Front Left", short: "FL" },
+    { id: 2, label: "Front Right", short: "FR" },
+    { id: 3, label: "Rear Left", short: "RL" },
+    { id: 4, label: "Rear Right", short: "RR" },
+    { id: 6, label: "Subwoofer", short: "SUB" },
+];
+
+const EQ_DEFAULTS = [
+    32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000,
+].map((frequency) => ({
+    frequency,
+    q: 1.2,
+    gain: 0,
+}));
+
+const FX_TOGGLES = [
+    { id: 0x0D, label: "Vocal Elimination", caption: "Center suppression" },
+    { id: 0x0E, label: "Stereo Enhance", caption: "Wider stereo image" },
+    { id: 0x0F, label: "3D Sound", caption: "Spatial enhancement" },
+];
+
+const FILTER_MODES = [
+    { id: 0, label: "LPF" },
+    { id: 1, label: "HPF" },
+];
+
+type EqBandState = {
+    frequency: number;
+    q: number;
+    gain: number;
+};
+
+function clamp(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function formatHz(value: number) {
+    if (value >= 1000) {
+        return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)} kHz`;
+    }
+    return `${Math.round(value)} Hz`;
+}
+
+function formatDb(value: number) {
+    return `${value > 0 ? "+" : ""}${value.toFixed(1)} dB`;
+}
+
+function formatMs(value: number) {
+    return `${Math.round(value)} ms`;
+}
 
 const DSPDashboard = () => {
-    const { 
-        isConnected, deviceName,
-        setVolume, selectInput, setEQ, 
-        setSubwooferParam, setPhase, toggleFeature
+    const {
+        isConnected,
+        deviceName,
+        selectInput,
+        setVolume,
+        setMasterVolume,
+        setEQ,
+        setBassBoost,
+        setSubwooferFrequency,
+        setSubwooferDelay,
+        setPhase,
+        setFilterType,
+        setFilterFrequency,
+        setAutoOffThreshold,
+        setReverb,
+        setEcho,
+        toggleFeature,
     } = useBluetooth();
 
-    const [activeTab, setActiveTab] = useState("mixer");
+    const [activeTab, setActiveTab] = useState("routing");
+    const [selectedInput, setSelectedInput] = useState(2);
+    const [masterVolumeValue, setMasterVolumeValue] = useState(8);
+    const [channelLevels, setChannelLevels] = useState<Record<number, number>>({
+        1: 8,
+        2: 8,
+        3: 8,
+        4: 8,
+        6: 8,
+    });
+    const [eqBands, setEqBands] = useState<EqBandState[]>(EQ_DEFAULTS);
+    const [filterMode, setFilterModeValue] = useState(0);
+    const [filterCutoff, setFilterCutoff] = useState(120);
+    const [autoOff, setAutoOff] = useState(12);
+    const [subwoofer, setSubwoofer] = useState({
+        frequency: 80,
+        bassBoost: 0,
+        phase: 0,
+        delay: 0,
+    });
+    const [reverb, setReverbState] = useState({
+        room: 45,
+        mix: 25,
+    });
+    const [echo, setEchoState] = useState({
+        delay: 140,
+        mix: 22,
+    });
+    const [featureStates, setFeatureStates] = useState<Record<number, boolean>>({
+        0x0D: false,
+        0x0E: false,
+        0x0F: false,
+    });
+
+    const isLocked = !isConnected;
 
     return (
-        <div className="w-full max-w-6xl mx-auto px-4 mt-4 md:mt-8 pb-32 relative">
-            <Card className="glass-dark border-white/10 shadow-2xl relative overflow-hidden">
-                {!isConnected && (
-                    <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center text-center p-8">
-                        <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6">
-                            <Lock className="w-8 h-8 text-white/40" />
+        <div className="flex min-h-screen flex-col bg-background text-foreground selection:bg-cyan-500/30">
+            {/* STICKY MOBILE HEADER */}
+            <div className="sticky top-0 z-40 border-b border-white/5 bg-background/80 px-4 py-3 backdrop-blur-xl md:hidden">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-lg font-black tracking-tighter text-white">BP10 CONSOLE</h1>
+                        <div className="flex items-center gap-1.5 ">
+                            <div className={`h-1.5 w-1.5 rounded-full ${isConnected ? "animate-pulse bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" : "bg-white/20"}`} />
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">
+                                {isConnected ? deviceName ?? "Online" : "Scanning..."}
+                            </span>
                         </div>
-                        <h3 className="text-2xl font-bold text-white mb-2 uppercase tracking-tighter">System Offline</h3>
-                        <p className="text-white/40 max-w-xs text-sm">
-                            Connect your BP10 device via Bluetooth to unlock professional audio processing.
-                        </p>
                     </div>
-                )}
+                    <Badge variant="outline" className="border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-black tracking-[0.1em] text-cyan-300">
+                        V1.2.0-PRO
+                    </Badge>
+                </div>
+            </div>
 
-                <CardHeader className="border-b border-white/5 bg-white/2 backdrop-blur-3xl px-8 py-6">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div>
-                            <CardTitle className="text-2xl font-black tracking-tighter bg-clip-text text-transparent bg-linear-to-r from-blue-400 to-indigo-400">
-                                BP10 DSP CONSOLE
-                            </CardTitle>
-                            <CardDescription className="text-white/40 mt-1 font-medium">
-                                Pro Audio Routing • {isConnected ? deviceName : "Hardware Not Found"}
-                            </CardDescription>
+            <main className="flex-1 px-4 pb-32 pt-4 md:px-8 md:pt-8">
+                <div className="mx-auto w-full max-w-7xl">
+                    {/* DESKTOP HEADER - Hidden on Mobile */}
+                    <div className="mb-8 hidden md:block">
+                        <div className="flex items-center justify-between gap-6">
+                            <div className="space-y-1">
+                                <h1 className="text-4xl font-black tracking-tighter text-white">BP10 Control Deck</h1>
+                                <p className="text-white/40 font-medium">Professional DSP Engine • {isConnected ? deviceName : "Awaiting Connection"}</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <StatusTile icon={Radio} label="Protocol" value="Web Bluetooth" />
+                                <StatusTile icon={AudioLines} label="Link State" value={isConnected ? "GATT Active" : "Searching"} />
+                            </div>
                         </div>
-                        <InputSelector onSelect={selectInput} active={isConnected} />
                     </div>
-                </CardHeader>
-                
-                <CardContent className="p-0">
-                    <Tabs defaultValue="mixer" className="w-full" onValueChange={setActiveTab}>
-                        <div className="bg-black/20 border-b border-white/5 px-8 pt-4">
-                            <TabsList className="bg-transparent gap-6 h-auto p-0 border-none">
-                                <TabTrigger value="mixer" icon={<Sliders className="w-4 h-4" />} label="Mixer" active={activeTab === "mixer"} />
-                                <TabTrigger value="eq" icon={<Settings2 className="w-4 h-4" />} label="10-Band EQ" active={activeTab === "eq"} />
-                                <TabTrigger value="sub" icon={<Speaker className="w-4 h-4" />} label="Subwoofer" active={activeTab === "sub"} />
-                                <TabTrigger value="fx" icon={<Waves className="w-4 h-4" />} label="Effects" active={activeTab === "fx"} />
+
+                    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                        {/* TAB NAVIGATION: Responsive Positioning */}
+                        <div className="fixed bottom-0 left-0 right-0 z-50 pb-safe border-t border-white/5 bg-background/90 px-3 pt-3 backdrop-blur-2xl md:relative md:bottom-auto md:mb-8 md:border-none md:bg-transparent md:p-0 md:pb-0">
+                            <TabsList className="grid h-16 w-full grid-cols-5 gap-1 rounded-2xl bg-white/4 p-1 md:h-auto md:gap-2 md:rounded-3xl md:bg-white/5">
+                                <TabChip value="routing" active={activeTab === "routing"} icon={SlidersHorizontal} label="Mixer" />
+                                <TabChip value="eq" active={activeTab === "eq"} icon={Equal} label="EQ" />
+                                <TabChip value="filters" active={activeTab === "filters"} icon={Layers} label="Cross" />
+                                <TabChip value="sub" active={activeTab === "sub"} icon={Speaker} label="Sub" />
+                                <TabChip value="fx" active={activeTab === "fx"} icon={Waves} label="FX" />
                             </TabsList>
                         </div>
 
-                        <div className="p-8">
-                            <TabsContent value="mixer" className="mt-0 outline-none">
-                                <MixerSection setVolume={setVolume} />
+                        {/* CONTENT SECTIONS */}
+                        <div className="space-y-6">
+                            <TabsContent value="routing" className="mt-0 outline-none">
+                                <SectionCard title="Input & Levels" description="Source selection, master gain, and threshold." icon={Radio}>
+                                    <div className="grid gap-6 lg:grid-cols-[1fr_0.8fr]">
+                                        <div className="space-y-6">
+                                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                                {INPUT_OPTIONS.map((input) => (
+                                                    <Button
+                                                        key={input.id}
+                                                        type="button"
+                                                        disabled={isLocked}
+                                                        variant="ghost"
+                                                        onClick={() => { setSelectedInput(input.id); void selectInput(input.id); }}
+                                                        className={`h-24 flex-col rounded-2xl border transition-all ${selectedInput === input.id ? "border-cyan-400/50 bg-cyan-500/15 text-white shadow-lg shadow-cyan-500/10" : "border-white/5 bg-white/2 text-white/40 hover:bg-white/5"}`}
+                                                    >
+                                                        <input.icon className={`mb-2 h-5 w-5 ${selectedInput === input.id ? "text-cyan-400" : ""}`} />
+                                                        <span className="text-[10px] font-black uppercase tracking-[0.2em]">{input.short}</span>
+                                                    </Button>
+                                                ))}
+                                            </div>
+                                            <RangeControl label="Master Volume" value={masterVolumeValue} display={masterVolumeValue.toString()} min={0} max={16} step={1} disabled={isLocked} onChange={(v: number[]) => { setMasterVolumeValue(v[0]); void setMasterVolume(v[0]); }} />
+                                            <RangeControl label="Silence Threshold" value={autoOff} display={`${autoOff}%`} min={0} max={100} step={1} disabled={isLocked} onChange={(v: number[]) => { setAutoOff(v[0]); void setAutoOffThreshold(v[0]); }} />
+                                        </div>
+                                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                                            {CHANNELS.map((channel) => (
+                                                <RangeControl key={channel.id} label={channel.label} value={channelLevels[channel.id]} display={channelLevels[channel.id].toString()} min={0} max={16} step={1} disabled={isLocked} onChange={(v: number[]) => { setChannelLevels(c => ({...c, [channel.id]: v[0]})); void setVolume(channel.id, v[0]); }} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                </SectionCard>
                             </TabsContent>
 
                             <TabsContent value="eq" className="mt-0 outline-none">
-                                <EQSection setEQ={setEQ} />
+                                <SectionCard title="Equalizer" description="Touch-optimized 10-band precision control." icon={Equal}>
+                                    <div className="scrollbar-none -mx-3 overflow-x-auto px-3 pb-4 snap-x snap-mandatory">
+                                        <div className="flex gap-3 pt-2">
+                                            {eqBands.map((band, index) => (
+                                                <div key={index} className="flex min-w-[140px] flex-col gap-6 rounded-3xl border border-white/8 bg-white/3 p-5 transition-all hover:border-white/20 snap-center">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[10px] font-black text-cyan-400">B{index + 1}</span>
+                                                        <span className="text-[10px] font-black text-white/40">{formatHz(band.frequency)}</span>
+                                                    </div>
+                                                    <div className="flex flex-col items-center gap-4 py-2">
+                                                        <Slider orientation="vertical" className="h-48" min={-12} max={12} step={0.5} disabled={isLocked} value={[band.gain]} onValueChange={(v: number[]) => { setEqBands(curr => curr.map((it, i) => i === index ? {...it, gain: v[0]} : it)); void setEQ(index, 4, v[0]); }} />
+                                                        <div className="text-xl font-black text-white">{band.gain > 0 ? "+" : ""}{band.gain.toFixed(1)}</div>
+                                                    </div>
+                                                    <div className="grid gap-3">
+                                                        <RangeControl compact label="F" value={band.frequency} display={formatHz(band.frequency)} min={20} max={16000} step={1} disabled={isLocked} onChange={(v: number[]) => { setEqBands(curr => curr.map((it, i) => i === index ? {...it, frequency: v[0]} : it)); void setEQ(index, 0, v[0]); }} />
+                                                        <RangeControl compact label="Q" value={band.q} display={band.q.toFixed(1)} min={0.1} max={10} step={0.1} disabled={isLocked} onChange={(v: number[]) => { setEqBands(curr => curr.map((it, i) => i === index ? {...it, q: v[0]} : it)); void setEQ(index, 3, v[0]); }} />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </SectionCard>
+                            </TabsContent>
+
+                            <TabsContent value="filters" className="mt-0 outline-none">
+                                <SectionCard title="Crossovers" description="HPF/LPF filter mode and cutoff control." icon={Layers}>
+                                    <div className="grid gap-6">
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {FILTER_MODES.map((mode) => (
+                                                <Button key={mode.id} variant="ghost" disabled={isLocked} onClick={() => { setFilterModeValue(mode.id); void setFilterType(mode.id); }} className={`h-20 rounded-2xl border text-sm font-black uppercase tracking-[0.2em] ${filterMode === mode.id ? "border-amber-400/50 bg-amber-500/15 text-white shadow-lg shadow-amber-500/10" : "border-white/8 bg-white/2 text-white/40 hover:bg-white/5"}`}>
+                                                    {mode.label}
+                                                </Button>
+                                            ))}
+                                        </div>
+                                        <RangeControl label="Cutoff Frequency" value={filterCutoff} display={formatHz(filterCutoff)} min={20} max={20000} step={1} disabled={isLocked} onChange={(v: number[]) => { setFilterCutoff(v[0]); void setFilterFrequency(v[0]); }} />
+                                    </div>
+                                </SectionCard>
                             </TabsContent>
 
                             <TabsContent value="sub" className="mt-0 outline-none">
-                                <SubSection setSubParam={setSubwooferParam} setPhase={setPhase} />
+                                <SectionCard title="Subwoofer" description="Dedicated low-end tuning and delay sync." icon={Speaker}>
+                                    <div className="grid gap-6 lg:grid-cols-2">
+                                        <div className="space-y-4">
+                                            <RangeControl label="LPF Crossover" value={subwoofer.frequency} display={formatHz(subwoofer.frequency)} min={20} max={200} step={1} disabled={isLocked} onChange={(v: number[]) => { setSubwoofer(c => ({...c, frequency: v[0]})); void setSubwooferFrequency(v[0]); }} />
+                                            <RangeControl label="Bass Level" value={subwoofer.bassBoost} display={formatDb(subwoofer.bassBoost)} min={-12} max={12} step={0.5} disabled={isLocked} onChange={(v: number[]) => { setSubwoofer(c => ({...c, bassBoost: v[0]})); void setBassBoost(v[0]); }} />
+                                            <RangeControl label="Latency Sync" value={subwoofer.delay} display={formatMs(subwoofer.delay)} min={0} max={250} step={1} disabled={isLocked} onChange={(v: number[]) => { setSubwoofer(c => ({...c, delay: v[0]})); void setSubwooferDelay(v[0]); }} />
+                                        </div>
+                                        <div className="flex flex-col gap-3 rounded-3xl border border-white/8 bg-white/3 p-6">
+                                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Phase Shift</p>
+                                            <div className="grid grid-cols-2 gap-3 flex-1">
+                                                {[0, 1].map((p) => (
+                                                    <Button key={p} variant="ghost" disabled={isLocked} onClick={() => { setSubwoofer(c => ({...c, phase: p})); void setPhase(6, p); }} className={`h-full rounded-2xl border text-2xl font-black ${subwoofer.phase === p ? "border-cyan-400/50 bg-cyan-500/15 text-white" : "border-white/5 bg-white/2 text-white/30"}`}>
+                                                        {p === 0 ? "0°" : "180°"}
+                                                    </Button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </SectionCard>
                             </TabsContent>
 
                             <TabsContent value="fx" className="mt-0 outline-none">
-                                <FXSection toggleFeature={toggleFeature} />
+                                <SectionCard title="Soundstage" description="Ambience levels and DSP logic switches." icon={Waves}>
+                                    <div className="grid gap-6 lg:grid-cols-2">
+                                        <div className="space-y-4">
+                                            <RangeControl label="Reverb Size" value={reverb.room} display={`${reverb.room}%`} min={0} max={100} step={1} disabled={isLocked} onChange={(v: number[]) => { setReverbState(c => ({...c, room: v[0]})); void setReverb(3, v[0]); }} />
+                                            <RangeControl label="Echo Decay" value={echo.delay} display={formatMs(echo.delay)} min={0} max={600} step={1} disabled={isLocked} onChange={(v: number[]) => { setEchoState(c => ({...c, delay: v[0]})); void setEcho(2, v[0]); }} />
+                                        </div>
+                                        <div className="space-y-3">
+                                            {FX_TOGGLES.map((f) => (
+                                                <button key={f.id} disabled={isLocked} onClick={() => { const next = !featureStates[f.id]; setFeatureStates(c => ({...c, [f.id]: next})); void toggleFeature(f.id, next); }} className={`flex w-full items-center justify-between rounded-2xl border p-4 transition-all ${featureStates[f.id] ? "border-emerald-500/40 bg-emerald-500/10" : "border-white/5 bg-white/2"} ${isLocked ? "opacity-40" : ""}`}>
+                                                    <div className="text-left">
+                                                        <p className="text-sm font-black uppercase tracking-[0.1em] text-white">{f.label}</p>
+                                                        <p className="text-[10px] text-white/40">{f.caption}</p>
+                                                    </div>
+                                                    <div className={`h-3 w-3 rounded-full ${featureStates[f.id] ? "bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)]" : "bg-white/10"}`} />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </SectionCard>
                             </TabsContent>
                         </div>
                     </Tabs>
-                </CardContent>
-            </Card>
-        </div>
-    );
-};
-
-// --- Subcomponents ---
-
-const InputSelector = ({ onSelect, active }: { onSelect: (s: number) => void, active: boolean }) => {
-    const [selected, setSelected] = useState(1);
-    const inputs = [
-        { id: 1, label: "BT", icon: <Bluetooth className="w-4 h-4" /> },
-        { id: 2, label: "AUX", icon: <Cable className="w-4 h-4" /> },
-        { id: 3, label: "OPT", icon: <Zap className="w-4 h-4" /> },
-        { id: 4, label: "COAX", icon: <Disc className="w-4 h-4" /> },
-    ];
-
-    return (
-        <div className="flex bg-black/40 p-1 rounded-xl border border-white/10 backdrop-blur-md">
-            {inputs.map((input) => (
-                <Button
-                    key={input.id}
-                    variant="ghost"
-                    size="sm"
-                    disabled={!active}
-                    onClick={() => { setSelected(input.id); onSelect(input.id); }}
-                    className={`gap-2 rounded-lg transition-all px-4 ${selected === input.id ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
-                >
-                    {input.icon}
-                    <span className="font-bold text-xs">{input.label}</span>
-                </Button>
-            ))}
-        </div>
-    );
-};
-
-const TabTrigger = ({ value, icon, label, active }: any) => (
-    <TabsTrigger 
-        value={value} 
-        className={`
-            flex items-center gap-2 pb-4 pt-1 px-1 bg-transparent border-b-2 rounded-none transition-all outline-none
-            ${active ? 'border-blue-500 text-white shadow-[0_4px_12px_-4px_rgba(59,130,246,0.5)]' : 'border-transparent text-white/40 hover:text-white/60'}
-        `}
-    >
-        {icon}
-        <span className="font-bold text-xs uppercase tracking-widest">{label}</span>
-    </TabsTrigger>
-);
-
-const MixerSection = ({ setVolume }: { setVolume: (ch: number, vol: number) => void }) => {
-    const channels = [
-        { id: 1, label: "FRONT LEFT", key: "FL" },
-        { id: 2, label: "FRONT RIGHT", key: "FR" },
-        { id: 3, label: "REAR LEFT", key: "RL" },
-        { id: 4, label: "REAR RIGHT", key: "RR" },
-        { id: 6, label: "SUBWOOFER", key: "SUB" },
-    ];
-
-    return (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-6 md:gap-10 px-4">
-            {channels.map((ch) => (
-                <div key={ch.id} className="flex flex-col items-center gap-12 p-8 glass-dark rounded-[3rem] border border-white/5 hover:border-white/10 transition-all group relative overflow-hidden h-[450px] md:h-[550px] shadow-2xl">
-                    <div className="w-full flex justify-between items-center px-2 relative z-10 opacity-40 group-hover:opacity-100 transition-opacity">
-                        <span className="text-[9px] font-black tracking-[0.5em]">{ch.key}</span>
-                        <Speaker className="w-4 h-4 text-white/40 group-hover:text-blue-500/80 transition-colors" />
-                    </div>
-                    
-                    <div className="flex-1 flex flex-col items-center relative z-10 py-6">
-                        <Slider
-                            orientation="vertical"
-                            defaultValue={[10]}
-                            max={16}
-                            onValueChange={(v: number[]) => setVolume(ch.id, v[0])}
-                            className="h-full"
-                        />
-                    </div>
-
-                    <div className="text-center relative z-10 mt-auto">
-                        <p className="text-[10px] font-black text-white/50 group-hover:text-white uppercase tracking-[0.3em] transition-colors">{ch.label}</p>
-                    </div>
-
-                    {/* Gradient highlight */}
-                    <div className="absolute inset-0 bg-linear-to-b from-blue-500/5 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
                 </div>
-            ))}
+            </main>
         </div>
     );
 };
 
-const EQSection = ({ setEQ }: { setEQ: (band: number, type: number, val: number) => void }) => {
-    const frequencies = ["32", "64", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
+// --- MOBILE-FIRST HELPERS ---
 
+function TabChip({ value, active, icon: Icon, label }: any) {
     return (
-        <div className="space-y-10 overflow-x-auto pb-4 scrollbar-hide">
-            <div className="flex items-center justify-between gap-4 min-w-[900px] px-4">
-                {frequencies.map((freq, band) => (
-                    <div key={band} className="flex flex-col items-center gap-8 p-5 glass-dark border border-white/5 rounded-[2rem] flex-1 backdrop-blur-md group hover:border-blue-500/20 transition-all">
-                        <div className="text-[10px] font-black text-blue-400 bg-blue-500/5 px-3 py-1 rounded-full border border-blue-500/10 shadow-[0_0_15px_-5px_rgba(59,130,246,0.5)]">
-                            {freq}Hz
-                        </div>
-                        <div className="h-56">
-                            <Slider
-                                orientation="vertical"
-                                defaultValue={[0]}
-                                min={-12}
-                                max={12}
-                                step={0.5}
-                                onValueChange={(v: number[]) => setEQ(band, 4, v[0])}
-                                className="h-full"
-                            />
-                        </div>
-                        <span className="text-[8px] font-black text-white/10 uppercase tracking-widest group-hover:text-white/40 transition-colors">BAND {band + 1}</span>
+        <TabsTrigger value={value} className={`flex flex-col items-center justify-center gap-1.5 rounded-xl transition-all md:flex-row md:py-3 ${active ? "bg-cyan-500/15 text-white shadow-[inset_0_0_0_1px_rgba(90,221,255,0.2)]" : "text-white/40 hover:text-white/60"}`}>
+            <Icon className="h-4.5 w-4.5 md:h-4 md:w-4" />
+            <span className="text-[9px] font-black uppercase tracking-[0.1em] md:text-xs md:tracking-[0.2em]">{label}</span>
+        </TabsTrigger>
+    );
+}
+
+function SectionCard({ title, description, icon: Icon, children }: any) {
+    return (
+        <Card className="border-white/10 bg-white/4 shadow-none rounded-[2rem] overflow-hidden">
+            <CardHeader className="p-5 pb-2 md:p-8">
+                <div className="flex items-start gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-400">
+                        <Icon className="h-6 w-6" />
                     </div>
-                ))}
-            </div>
-            <div className="flex justify-center pt-4">
-                <Button variant="outline" className="bg-white/2 border-white/5 hover:bg-blue-600/20 hover:border-blue-500/50 gap-3 rounded-2xl h-14 px-10 font-black uppercase tracking-[0.2em] text-[10px] transition-all shadow-xl">
-                    <Zap className="w-4 h-4 text-blue-400 fill-blue-400/20" /> Reset to Flat
-                </Button>
-            </div>
-        </div>
-    );
-};
-
-const SubSection = ({ setSubParam, setPhase }: { setSubParam: (id: number, val: number) => void, setPhase: (ch: number, ph: number) => void }) => {
-    return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto py-8">
-            <Card className="glass-dark border-white/10 p-8 space-y-8 text-center ring-1 ring-white/5">
-                <h3 className="text-lg font-black uppercase tracking-tighter flex items-center justify-center gap-3">
-                    <Speaker className="w-5 h-5 text-blue-400" />
-                    Sub Filter (LPF)
-                </h3>
-                <Slider 
-                    defaultValue={[80]} 
-                    min={20} 
-                    max={200} 
-                    onValueChange={(v: number[]) => setSubParam(1, v[0])} 
-                />
-                <div className="flex justify-between text-[10px] text-white/30 uppercase font-black tracking-widest">
-                    <span>20Hz</span>
-                    <span className="text-blue-400 text-lg">80Hz</span>
-                    <span>200Hz</span>
+                    <div>
+                        <CardTitle className="text-xl font-black text-white">{title}</CardTitle>
+                        <CardDescription className="text-xs text-white/40 md:text-sm">{description}</CardDescription>
+                    </div>
                 </div>
-            </Card>
+            </CardHeader>
+            <CardContent className="p-5 pt-0 md:p-8 md:pt-0">{children}</CardContent>
+        </Card>
+    );
+}
 
-            <Card className="glass-dark border-white/10 p-8 flex flex-col justify-between text-center ring-1 ring-white/5">
-                <h3 className="text-lg font-black uppercase tracking-tighter flex items-center justify-center gap-3 mb-8">
-                    <Layers className="w-5 h-5 text-indigo-400" />
-                    Phase Control
-                </h3>
-                <div className="flex gap-4">
-                    <Button 
-                        className="flex-1 rounded-3xl py-10 text-xl font-black bg-white/2 hover:bg-blue-600/20 border-white/5 hover:border-blue-500/50" 
-                        variant="outline"
-                        onClick={() => setPhase(3, 0)}
-                    >
-                        0°
-                    </Button>
-                    <Button 
-                        className="flex-1 rounded-3xl py-10 text-xl font-black bg-white/2 hover:bg-indigo-600/20 border-white/5 hover:border-indigo-500/50" 
-                        variant="outline"
-                        onClick={() => setPhase(3, 1)}
-                    >
-                        180°
-                    </Button>
-                </div>
-            </Card>
+function StatusTile({ icon: Icon, label, value }: any) {
+    return (
+        <div className="rounded-2xl border border-white/8 bg-white/4 p-3 ring-1 ring-white/5 min-w-[160px]">
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/30">
+                <Icon className="h-3 w-3" /> {label}
+            </div>
+            <p className="mt-1 text-sm font-bold text-white/80">{value}</p>
         </div>
     );
-};
+}
 
-const FXSection = ({ toggleFeature }: any) => {
-    const features = [
-        { id: 0x0D, label: "Vocal Elimination", desc: "Digital Voice Removal", icon: <Mic2 className="w-6 h-6" /> },
-        { id: 0x0E, label: "Stereo Enhance", desc: "Wide Stage Expansion", icon: <Layers className="w-6 h-6" /> },
-        { id: 0x0F, label: "3D Spatial Audio", desc: "Surround Immersion", icon: <Waves className="w-6 h-6" /> },
-    ];
-
+function RangeControl({ label, value, display, min, max, step, disabled, onChange, compact }: any) {
     return (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-5xl mx-auto py-8">
-            {features.map((f) => (
-                <FeatureToggle key={f.id} feature={f} onToggle={(on: boolean) => toggleFeature(f.id, on)} />
-            ))}
+        <div className={`rounded-3xl border border-white/5 bg-black/30 w-full ${compact ? "p-3" : "p-4 md:p-6"}`}>
+            <div className="mb-4 flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">{label}</span>
+                <span className="rounded-lg bg-white/5 px-2 py-0.5 text-[11px] font-black text-cyan-400">{display}</span>
+            </div>
+            <Slider disabled={disabled} min={min} max={max} step={step} value={[clamp(value, min, max)]} onValueChange={onChange} />
         </div>
     );
-};
-
-const FeatureToggle = ({ feature, onToggle }: { feature: any, onToggle: (on: boolean) => void }) => {
-    const [enabled, setEnabled] = useState(false);
-    return (
-        <button
-            onClick={() => { setEnabled(!enabled); onToggle(!enabled); }}
-            className={`
-                group relative p-8 rounded-[2.5rem] border transition-all duration-500 text-left overflow-hidden flex flex-col justify-between h-64
-                ${enabled ? 'bg-blue-600/20 border-blue-500/50 shadow-2xl shadow-blue-500/20' : 'bg-white/3 border-white/5 hover:border-white/20'}
-            `}
-        >
-            <div className={`
-                w-16 h-16 rounded-[1.25rem] flex items-center justify-center transition-all duration-500
-                ${enabled ? 'bg-blue-500 shadow-lg shadow-blue-500/50 text-white' : 'bg-white/5 text-white/40'}
-            `}>
-                {feature.icon}
-            </div>
-
-            <div>
-                <h4 className={`text-xl font-black uppercase tracking-tighter mb-1 transition-colors ${enabled ? 'text-white' : 'text-white/60'}`}>
-                    {feature.label}
-                </h4>
-                <p className="text-[10px] text-white/40 leading-relaxed uppercase tracking-[0.2em] font-black">
-                    {feature.desc}
-                </p>
-            </div>
-
-            <div className="absolute top-8 right-8">
-                <Badge className={`${enabled ? 'bg-blue-500' : 'bg-white/10 text-white/20 font-bold tracking-widest text-[9px]'}`}>
-                    {enabled ? "ACTIVE" : "OFFLINE"}
-                </Badge>
-            </div>
-            
-            <AnimatePresence>
-                {enabled && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="absolute inset-0 bg-linear-to-br from-blue-600/10 to-transparent pointer-events-none"
-                    />
-                )}
-            </AnimatePresence>
-        </button>
-    );
-};
+}
 
 export default DSPDashboard;

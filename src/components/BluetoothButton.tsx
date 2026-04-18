@@ -32,7 +32,9 @@ const BluetoothButton = () => {
         } catch (error: any) {
             console.error("Bluetooth connection failed:", error);
             if (error.name !== 'NotFoundError' && error.name !== 'UserCancelledError') {
-                alert(error.message || "Failed to connect to device");
+                alert("ERROR: " + (error.message || "Failed to connect to device"));
+            } else if (error.name === 'NotFoundError') {
+                alert("DIAGNOSTIC: Browser reported 'NotFoundError'. This usually means you hit Cancel or no physical devices were found nearby.");
             }
         } finally {
             setIsScanning(false);
@@ -41,23 +43,19 @@ const BluetoothButton = () => {
 
     return (
         <div className="flex flex-col items-center gap-6">
-            <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="relative"
-            >
+            <div className="relative">
                 {/* Visual indicator for scanning/connection */}
                 <AnimatePresence>
                     {(isScanning || isConnected) && (
                         <motion.div
                             initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ 
-                                scale: isConnected ? [1.2, 1.3, 1.2] : 1.5, 
+                            animate={{
+                                scale: isConnected ? [1.2, 1.3, 1.2] : 1.5,
                                 opacity: isConnected ? 0.2 : 0.4
                             }}
                             exit={{ scale: 2, opacity: 0 }}
-                            transition={{ 
-                                repeat: Infinity, 
+                            transition={{
+                                repeat: Infinity,
                                 duration: isConnected ? 3 : 1.5,
                                 ease: "easeInOut"
                             }}
@@ -79,17 +77,17 @@ const BluetoothButton = () => {
                         <Loader2 className="w-12 h-12 text-white animate-spin" />
                     ) : isConnected ? (
                         <>
-                             <BluetoothConnected className="w-12 h-12 text-green-400 group-hover:opacity-0 transition-opacity" />
-                             <PowerOff className="absolute w-10 h-10 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <BluetoothConnected className="w-12 h-12 text-green-400 group-hover:opacity-0 transition-opacity" />
+                            <PowerOff className="absolute w-10 h-10 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                         </>
                     ) : (
                         <Bluetooth className="w-12 h-12 text-white" />
                     )}
-                    
+
                     {/* Interior Glow */}
                     <div className={`absolute inset-0 opacity-20 pointer-events-none ${isConnected ? 'bg-green-400 blur-2xl' : 'bg-white blur-2xl'}`} />
                 </Button>
-            </motion.div>
+            </div>
 
             <AnimatePresence mode="wait">
                 {isConnected ? (
@@ -104,7 +102,7 @@ const BluetoothButton = () => {
                             ONLINE: <span className="text-white ml-2">{deviceName}</span>
                         </div>
                         <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-medium mt-2">
-                             Connected via Secure GATT
+                            Connected via Secure GATT
                         </p>
                     </motion.div>
                 ) : (

@@ -4,11 +4,43 @@
  * Service to handle BP10 Bluetooth DSP communication
  */
 export class BluetoothService {
+    private static readonly SERVICE_UUID = '0000ab00-0000-1000-8000-00805f9b34fb';
+    private static readonly CHARACTERISTIC_UUID = '0000ab01-0000-1000-8000-00805f9b34fb';
+    private static readonly WRITE_GAP_MS = 120;
+    private static readonly CONNECT_SETTLE_MS = 750;
+
     private device: any | null = null;
     private characteristic: any | null = null;
     private onStateChange: (connected: boolean) => void;
     private onCommandSent?: (hex: string) => void;
     private isSimulated = false;
+    private disconnectHandler?: () => void;
+
+    private async requestTargetDevice() {
+        const bluetooth = (navigator as any).bluetooth;
+
+        try {
+            console.log("Looking for BP10 service advertisement...");
+            return await bluetooth.requestDevice({
+                filters: [{ services: [BluetoothService.SERVICE_UUID] }],
+                optionalServices: [BluetoothService.SERVICE_UUID],
+            });
+        } catch (error: any) {
+            if (error?.name !== "NotFoundError") {
+                throw error;
+            }
+
+            console.log("Falling back to broad discovery for devices that hide services...");
+            return await bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: [
+                    BluetoothService.SERVICE_UUID,
+                    "device_information",
+                    "generic_access",
+                ],
+            });
+        }
+    }
 
     constructor(onStateChange: (connected: boolean) => void, onCommandSent?: (hex: string) => void) {
         this.onStateChange = onStateChange;
@@ -22,82 +54,110 @@ export class BluetoothService {
     }
 
     async connect() {
-        // BP10 Custom Protocol UUIDs
-        const SERVICE_UUID = '0000ab00-0000-1000-8000-00805f9b34fb';
-        const CHARACTERISTIC_UUID = '0000ab01-0000-1000-8000-00805f9b34fb';
-
         if (typeof window === 'undefined' || !(navigator as any).bluetooth) {
             console.error("Web Bluetooth is not supported.");
-            alert("Bluetooth is missing. \n\n• iOS: Use the 'Bluefy' browser.\n• Android: Use Chrome.\n• PC: Use Chrome/Edge.");
+            alert("Bluetooth is missing. \n\n• iOS: Use 'Bluefy' Browser.\n• Android/PC: Use Chrome.");
             return;
         }
 
         try {
-            console.log("Stage 1: Hardware Filtering...");
-            this.device = await (navigator as any).bluetooth.requestDevice({
-                filters: [{ services: [SERVICE_UUID] }],
-                optionalServices: [SERVICE_UUID, 'device_information', 'generic_access']
-            });
+            this.commandQueue = [];
+            this.isWriting = false;
+            this.characteristic = null;
 
-            console.log(`Stage 2: Linking to ${this.device.name}...`);
+            if (this.device?.gatt?.connected) {
+                await this.device.gatt.disconnect().catch(() => null);
+            }
+
+            this.device = await this.requestTargetDevice();
+
+            console.log(`Connecting to: ${this.device.name || 'Unknown Device'}...`);
             const server = await this.device.gatt?.connect();
-            if (!server) throw new Error("GATT Link Failure");
+            if (!server) throw new Error("GATT Bridge Failure");
 
-            // --- MOBILE STABILITY OPTIMIZATION ---
-            // Large walk-throughs (getPrimaryServices) often crash mobile BLE stacks.
-            // We switch to a targeted discovery model that is fast yet thorough enough to 'wake' the chip.
-            console.log("Stage 3: Protocol Negotiation...");
+            console.log("BLE Scanner Emulation: Performing deep discovery walk...");
             
-            // 1. Precise Service Discovery
-            const mainService = await server.getPrimaryService(SERVICE_UUID);
-            this.characteristic = await mainService.getCharacteristic(CHARACTERISTIC_UUID);
+            // MAGIC FIX: We must mimic a BLE Scanner app to 'wake up' the MVsilicon bridge properly.
+            // By requesting all services and fetching all characteristics, we force the chip to
+            // initialize its internal UART queues, preventing the 'one command only' freeze.
+            try {
+                const services = await server.getPrimaryServices();
+                for (const service of services) {
+                    console.log(`Discovered service: ${service.uuid}`);
+                    const characteristics = await service.getCharacteristics();
+                    
+                    for (const char of characteristics) {
+                        // Identify our target control endpoint
+                        if (char.uuid === BluetoothService.CHARACTERISTIC_UUID) {
+                            this.characteristic = char;
+                        }
+                        
+                        // Wake up the attribute by touching its read property if available
+                        if (char.properties.read) {
+                            await char.readValue().catch(() => null);
+                        }
+                        
+                        // Subscribe to all notifications like a scanner does
+                        if (char.properties.notify || char.properties.indicate) {
+                            if (char.uuid === BluetoothService.CHARACTERISTIC_UUID) {
+                                char.addEventListener('characteristicvaluechanged', (event: any) => {
+                                    const val = event.target?.value;
+                                    if (val) console.log(`[HARDWARE] <== ACK RECEIVED (${val.byteLength} bytes)`);
+                                });
+                            }
+                            await char.startNotifications().catch(() => null);
+                        }
+                        
+                        // Small delay to prevent mobile browser NetworkErrors during intense discovery
+                        await new Promise(r => setTimeout(r, 60)); 
+                    }
+                }
+            } catch (deepWalkError) {
+                console.warn("Deep discovery walk interrupted, but bridge may still be active.", deepWalkError);
+                if (!this.characteristic) {
+                    const mainService = await server.getPrimaryService(BluetoothService.SERVICE_UUID);
+                    this.characteristic = await mainService.getCharacteristic(BluetoothService.CHARACTERISTIC_UUID);
+                }
+            }
 
             if (!this.characteristic) {
-                throw new Error("Target Endpoint 0xAB01 not responding.");
+                throw new Error("Target Endpoint 0xAB01 Offline.");
             }
 
-            // 2. Hardware 'Execute' Signal (Notifications)
-            // Mirroring BLE scanner: Activating feedback loop signals 'App Ready' to the DSP
-            if (this.characteristic.properties.notify) {
-                this.characteristic.addEventListener('characteristicvaluechanged', (event: any) => {
-                    const target = event.target as any;
-                    const val = target?.value;
-                    if (val) console.log(`[HARDWARE] <== ACK (${val.byteLength} bytes)`);
-                });
-                
-                console.log("  > Activating Real-time Channel...");
-                await this.characteristic.startNotifications().catch(() => null);
-            }
+            console.log("Hardware Bridge Sync Verified.");
+            await new Promise(resolve => setTimeout(resolve, BluetoothService.CONNECT_SETTLE_MS));
 
-            // 3. Warm-up Poke (Reading Generic Info)
-            // Reading the characteristic once force-refreshes the device's internal attribute pointer
-            if (this.characteristic.properties.read) {
-                await this.characteristic.readValue().catch(() => null);
-            }
-
-            // 4. Settling Period
-            // Mobile devices need a moment to stabilize the radio after MTU negotiation
-            console.log("Stage 4: Finalizing Bridge...");
-            await new Promise(resolve => setTimeout(resolve, 800));
-            
             this.onStateChange(true);
-            console.log("BP10 STATUS: ONLINE");
+            console.log("BP10 CORE: ONLINE");
 
-            this.device.addEventListener('gattserverdisconnected', () => {
-                console.warn("Signal Lost. Cleaning session...");
+            if (this.disconnectHandler && this.device) {
+                this.device.removeEventListener('gattserverdisconnected', this.disconnectHandler);
+            }
+
+            this.disconnectHandler = () => {
+                console.warn("Hardware Link Terminated.");
                 this.onStateChange(false);
                 this.device = null;
                 this.characteristic = null;
-            });
+                this.commandQueue = [];
+                this.isWriting = false;
+            };
+
+            this.device.addEventListener('gattserverdisconnected', this.disconnectHandler);
 
             return this.device.name;
         } catch (error: any) {
             this.onStateChange(false);
-            // Handle User Cancelled specially to avoid noisy alerts
+            this.device = null;
+            this.characteristic = null;
             if (error.name === 'NotFoundError') {
-                console.log("Selection Cancelled by User");
+                console.log("User cancelled unit discovery.");
+            } else if (error.name === "SecurityError") {
+                throw new Error("Bluetooth needs HTTPS and mobile Bluetooth permissions enabled.");
+            } else if (error.name === "NetworkError") {
+                throw new Error("Could not connect to the DSP device. Turn Bluetooth off/on on the phone and retry.");
             } else {
-                console.error("Critical Connection Error:", error);
+                console.error("GATT Tunnel Error:", error);
                 throw error;
             }
         }
@@ -105,7 +165,7 @@ export class BluetoothService {
 
     async disconnect() {
         try {
-            if (this.characteristic?.properties?.notify) {
+            if (this.characteristic?.properties?.notify || this.characteristic?.properties?.indicate) {
                 await this.characteristic.stopNotifications().catch(() => null);
             }
             if (this.device?.gatt?.connected) {
@@ -117,6 +177,8 @@ export class BluetoothService {
             this.onStateChange(false);
             this.device = null;
             this.characteristic = null;
+            this.commandQueue = [];
+            this.isWriting = false;
         }
     }
 
@@ -164,7 +226,7 @@ export class BluetoothService {
 
         this.isWriting = true;
         const packet = this.commandQueue.shift();
-        
+
         if (!packet) {
             this.isWriting = false;
             return;
@@ -178,39 +240,44 @@ export class BluetoothService {
         }
 
         try {
-            // RELIABILITY: Hybrid Write Logic
             const props = this.characteristic.properties;
-            if (props.write) {
+
+            if (props.writeWithoutResponse) {
+                await this.characteristic.writeValueWithoutResponse(packet);
+            } else if (props.write) {
                 await this.characteristic.writeValueWithResponse(packet);
             } else {
-                await this.characteristic.writeValueWithoutResponse(packet);
+                throw new Error("Characteristic is not writable");
             }
         } catch (e) {
             console.error("Write failed", e);
             this.commandQueue = []; // Clear queue on hardware fault
         } finally {
             this.isWriting = false;
-            // Cooldown for hardware stability
-            setTimeout(() => this.processQueue(), 80);
+            setTimeout(() => this.processQueue(), BluetoothService.WRITE_GAP_MS);
         }
     }
 
     // --- Command Set ---
 
-    async selectInput(source: number) { 
-        await this.sendCommand([0x01, source]); 
+    async selectInput(source: number) {
+        await this.sendCommand([0x01, source]);
     }
-    
-    async setVolume(ch: number, vol: number) { 
-        await this.sendCommand([0x02, ch, Math.min(16, Math.max(0, vol))]); 
+
+    async setVolume(ch: number, vol: number) {
+        await this.sendCommand([0x02, ch, Math.min(16, Math.max(0, vol))]);
     }
-    
+
+    async setMasterVolume(vol: number) {
+        await this.setVolume(5, vol);
+    }
+
     async setEQ(band: number, type: number, value: number) {
         let val = 0;
         if (type === 4) val = Math.round(value * 256);      // Gain Q8.8
         else if (type === 3) val = Math.round(value * 1024); // Q Q6.10
         else val = Math.round(value);
-        
+
         await this.sendCommand([0x04, band, type, val & 0xFF, (val >> 8) & 0xFF]);
     }
 
@@ -219,19 +286,46 @@ export class BluetoothService {
         await this.sendCommand([0x07, id, val & 0xFF, (val >> 8) & 0xFF]);
     }
 
-    async setPhase(ch: number, ph: number) { 
-        await this.sendCommand([0x08, ch, ph]); 
+    async setBassBoost(value: number) {
+        await this.setSubwooferParam(0, value);
     }
-    
-    async setReverb(id: number, val: number) { 
-        await this.sendCommand([0x0B, id, val & 0xFF, (val >> 8) & 0xFF]); 
+
+    async setSubwooferFrequency(value: number) {
+        await this.setSubwooferParam(1, value);
     }
-    
-    async setEcho(id: number, val: number) { 
-        await this.sendCommand([0x0C, id, val & 0xFF, (val >> 8) & 0xFF]); 
+
+    async setSubwooferDelay(value: number) {
+        // Assumed DAC-X delay slot following bass boost and LPF frequency.
+        await this.setSubwooferParam(2, value);
     }
-    
-    async toggleFeature(cmd: number, on: boolean) { 
-        await this.sendCommand([cmd, on ? 1 : 0]); 
+
+    async setPhase(ch: number, ph: number) {
+        await this.sendCommand([0x08, ch, ph]);
+    }
+
+    async setFilterType(mode: number) {
+        // Assumed crossover filter command family for LPF / HPF selection.
+        await this.sendCommand([0x05, 0x00, mode]);
+    }
+
+    async setFilterFrequency(value: number) {
+        const val = Math.round(value);
+        await this.sendCommand([0x05, 0x01, val & 0xFF, (val >> 8) & 0xFF]);
+    }
+
+    async setAutoOffThreshold(value: number) {
+        await this.sendCommand([0x06, Math.max(0, Math.min(100, Math.round(value)))]);
+    }
+
+    async setReverb(id: number, val: number) {
+        await this.sendCommand([0x0B, id, val & 0xFF, (val >> 8) & 0xFF]);
+    }
+
+    async setEcho(id: number, val: number) {
+        await this.sendCommand([0x0C, id, val & 0xFF, (val >> 8) & 0xFF]);
+    }
+
+    async toggleFeature(cmd: number, on: boolean) {
+        await this.sendCommand([cmd, on ? 1 : 0]);
     }
 }

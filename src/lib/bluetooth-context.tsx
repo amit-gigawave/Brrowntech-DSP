@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useRef, useCallback } from 'react';
 import { BluetoothService } from './bluetooth';
 
 interface BluetoothContextType {
@@ -11,10 +11,17 @@ interface BluetoothContextType {
     simulateConnect: () => Promise<void>;
     disconnect: () => Promise<void>;
     setVolume: (channel: number, level: number) => Promise<void>;
+    setMasterVolume: (level: number) => Promise<void>;
     selectInput: (source: number) => Promise<void>;
     setEQ: (band: number, type: number, value: number) => Promise<void>;
     setSubwooferParam: (id: number, value: number) => Promise<void>;
+    setBassBoost: (value: number) => Promise<void>;
+    setSubwooferFrequency: (value: number) => Promise<void>;
+    setSubwooferDelay: (value: number) => Promise<void>;
     setPhase: (channel: number, phase: number) => Promise<void>;
+    setFilterType: (mode: number) => Promise<void>;
+    setFilterFrequency: (value: number) => Promise<void>;
+    setAutoOffThreshold: (value: number) => Promise<void>;
     setReverb: (paramId: number, value: number) => Promise<void>;
     setEcho: (paramId: number, value: number) => Promise<void>;
     toggleFeature: (cmd: number, on: boolean) => Promise<void>;
@@ -59,10 +66,17 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
 
     const setVolume = (channel: number, level: number) => serviceRef.current!.setVolume(channel, level);
+    const setMasterVolume = (level: number) => serviceRef.current!.setMasterVolume(level);
     const selectInput = (source: number) => serviceRef.current!.selectInput(source);
     const setEQ = (band: number, type: number, value: number) => serviceRef.current!.setEQ(band, type, value);
     const setSubwooferParam = (id: number, value: number) => serviceRef.current!.setSubwooferParam(id, value);
+    const setBassBoost = (value: number) => serviceRef.current!.setBassBoost(value);
+    const setSubwooferFrequency = (value: number) => serviceRef.current!.setSubwooferFrequency(value);
+    const setSubwooferDelay = (value: number) => serviceRef.current!.setSubwooferDelay(value);
     const setPhase = (channel: number, phase: number) => serviceRef.current!.setPhase(channel, phase);
+    const setFilterType = (mode: number) => serviceRef.current!.setFilterType(mode);
+    const setFilterFrequency = (value: number) => serviceRef.current!.setFilterFrequency(value);
+    const setAutoOffThreshold = (value: number) => serviceRef.current!.setAutoOffThreshold(value);
     const setReverb = (paramId: number, value: number) => serviceRef.current!.setReverb(paramId, value);
     const setEcho = (paramId: number, value: number) => serviceRef.current!.setEcho(paramId, value);
     const toggleFeature = (cmd: number, on: boolean) => serviceRef.current!.toggleFeature(cmd, on);
@@ -70,8 +84,10 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return (
         <BluetoothContext.Provider value={{ 
             isConnected, deviceName, commandLogs, connect, simulateConnect, disconnect, 
-            setVolume, selectInput, setEQ, setSubwooferParam, 
-            setPhase, setReverb, setEcho, toggleFeature 
+            setVolume, setMasterVolume, selectInput, setEQ, setSubwooferParam,
+            setBassBoost, setSubwooferFrequency, setSubwooferDelay,
+            setPhase, setFilterType, setFilterFrequency, setAutoOffThreshold,
+            setReverb, setEcho, toggleFeature 
         }}>
             {children}
         </BluetoothContext.Provider>

@@ -3,7 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import { Providers } from "@/components/Providers";
-import DebugConsole from "@/components/DebugConsole";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -34,7 +33,6 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-black antialiased" suppressHydrationWarning>
         <Providers>
           {children}
-          <DebugConsole />
         </Providers>
       </body>
     </html>
