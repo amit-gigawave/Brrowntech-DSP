@@ -12,8 +12,11 @@ interface BluetoothContextType {
     disconnect: () => Promise<void>;
     setVolume: (channel: number, level: number) => Promise<void>;
     setMasterVolume: (level: number) => Promise<void>;
+    setDACMasterVolume: (level: number) => Promise<void>;
     selectInput: (source: number) => Promise<void>;
     setEQ: (band: number, type: number, value: number) => Promise<void>;
+    setEQGlobalEnable: (on: boolean) => Promise<void>;
+    setEQGlobalPregain: (value: number) => Promise<void>;
     setSubwooferParam: (id: number, value: number) => Promise<void>;
     setBassBoost: (value: number) => Promise<void>;
     setSubwooferFrequency: (value: number) => Promise<void>;
@@ -67,8 +70,11 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const setVolume = (channel: number, level: number) => serviceRef.current!.setVolume(channel, level);
     const setMasterVolume = (level: number) => serviceRef.current!.setMasterVolume(level);
+    const setDACMasterVolume = (level: number) => serviceRef.current!.setDACMasterVolume(level);
     const selectInput = (source: number) => serviceRef.current!.selectInput(source);
     const setEQ = (band: number, type: number, value: number) => serviceRef.current!.setEQ(band, type, value);
+    const setEQGlobalEnable = (on: boolean) => serviceRef.current!.setEQGlobalEnable(on);
+    const setEQGlobalPregain = (value: number) => serviceRef.current!.setEQGlobalPregain(value);
     const setSubwooferParam = (id: number, value: number) => serviceRef.current!.setSubwooferParam(id, value);
     const setBassBoost = (value: number) => serviceRef.current!.setBassBoost(value);
     const setSubwooferFrequency = (value: number) => serviceRef.current!.setSubwooferFrequency(value);
@@ -84,7 +90,8 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return (
         <BluetoothContext.Provider value={{ 
             isConnected, deviceName, commandLogs, connect, simulateConnect, disconnect, 
-            setVolume, setMasterVolume, selectInput, setEQ, setSubwooferParam,
+            setVolume, setMasterVolume, setDACMasterVolume, selectInput, setEQ, 
+            setEQGlobalEnable, setEQGlobalPregain, setSubwooferParam,
             setBassBoost, setSubwooferFrequency, setSubwooferDelay,
             setPhase, setFilterType, setFilterFrequency, setAutoOffThreshold,
             setReverb, setEcho, toggleFeature 

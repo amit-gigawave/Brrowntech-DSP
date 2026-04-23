@@ -143,6 +143,9 @@
   .animate-slow-spin {
     animation: spin-slow 30s linear infinite;
   }
+  .animate-reverse-spin {
+    animation: spin-reverse 20s linear infinite;
+  }
   .grid-bg {
     background-image: 
       linear-gradient(to right, rgba(128,128,128,0.05) 1px, transparent 1px),
@@ -167,5 +170,14 @@
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes spin-reverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
   }
 }

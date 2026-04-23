@@ -19,27 +19,18 @@ export class BluetoothService {
     private async requestTargetDevice() {
         const bluetooth = (navigator as any).bluetooth;
 
-        try {
-            console.log("Looking for BP10 service advertisement...");
-            return await bluetooth.requestDevice({
-                filters: [{ services: [BluetoothService.SERVICE_UUID] }],
-                optionalServices: [BluetoothService.SERVICE_UUID],
-            });
-        } catch (error: any) {
-            if (error?.name !== "NotFoundError") {
-                throw error;
-            }
-
-            console.log("Falling back to broad discovery for devices that hide services...");
-            return await bluetooth.requestDevice({
-                acceptAllDevices: true,
-                optionalServices: [
-                    BluetoothService.SERVICE_UUID,
-                    "device_information",
-                    "generic_access",
-                ],
-            });
-        }
+        console.log("Requesting broad discovery for BP10 device...");
+        
+        // Use a single request with acceptAllDevices so the popup only opens ONCE.
+        // This guarantees all nearby devices are listed, even if they hide their Service UUID.
+        return await bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: [
+                BluetoothService.SERVICE_UUID,
+                "device_information",
+                "generic_access",
+            ],
+        });
     }
 
     constructor(onStateChange: (connected: boolean) => void, onCommandSent?: (hex: string) => void) {
@@ -72,7 +63,23 @@ export class BluetoothService {
             this.device = await this.requestTargetDevice();
 
             console.log(`Connecting to: ${this.device.name || 'Unknown Device'}...`);
-            const server = await this.device.gatt?.connect();
+            
+            if (!this.device.gatt) throw new Error("GATT Interface not found on device.");
+
+            // FIX: If GATT hangs because Android has locked the device (e.g., actively paired for audio),
+            // this timeout breaks the infinite spinner and warns the user exactly how to fix it!
+            const gattConnectPromise = this.device.gatt.connect();
+            const gattTimeoutPromise = new Promise<any>((_, reject) => 
+                setTimeout(() => reject(new Error("GATT_HANG")), 10000)
+            );
+
+            const server = await Promise.race([gattConnectPromise, gattTimeoutPromise]).catch(err => {
+                if (err.message === "GATT_HANG") {
+                    throw new Error("Phone hardware locked the connection! \n\nFIX: Go to your phone's Bluetooth Settings, click 'Forget' or 'Unpair' on the BP10 device, and try again.");
+                }
+                throw err;
+            });
+
             if (!server) throw new Error("GATT Bridge Failure");
 
             console.log("BLE Scanner Emulation: Performing deep discovery walk...");
@@ -265,6 +272,7 @@ export class BluetoothService {
     }
 
     async setVolume(ch: number, vol: number) {
+        // PT2258 Analog Volume
         await this.sendCommand([0x02, ch, Math.min(16, Math.max(0, vol))]);
     }
 
@@ -272,13 +280,27 @@ export class BluetoothService {
         await this.setVolume(5, vol);
     }
 
+    async setDACMasterVolume(vol: number) {
+        // DAC_X Digital Volume (0x03)
+        await this.sendCommand([0x03, Math.round(vol)]);
+    }
+
     async setEQ(band: number, type: number, value: number) {
         let val = 0;
-        if (type === 4) val = Math.round(value * 256);      // Gain Q8.8
-        else if (type === 3) val = Math.round(value * 1024); // Q Q6.10
+        if (type === 4 || type === 5) val = Math.round(value * 256); // Gain/Pregain Q8.8
+        else if (type === 3) val = Math.round(value * 1024);         // Q Q6.10
         else val = Math.round(value);
 
         await this.sendCommand([0x04, band, type, val & 0xFF, (val >> 8) & 0xFF]);
+    }
+
+    async setEQGlobalEnable(on: boolean) {
+        await this.sendCommand([0x04, 0, 7, on ? 1 : 0, 0]);
+    }
+
+    async setEQGlobalPregain(value: number) {
+        const val = Math.round(value * 256);
+        await this.sendCommand([0x04, 0, 5, val & 0xFF, (val >> 8) & 0xFF]);
     }
 
     async setSubwooferParam(id: number, value: number) {
@@ -295,8 +317,9 @@ export class BluetoothService {
     }
 
     async setSubwooferDelay(value: number) {
-        // Assumed DAC-X delay slot following bass boost and LPF frequency.
-        await this.setSubwooferParam(2, value);
+        // Corrected to 0x0A from manual (0..5ms)
+        const val = Math.max(0, Math.min(5, Math.round(value)));
+        await this.sendCommand([0x0A, val]);
     }
 
     async setPhase(ch: number, ph: number) {
@@ -304,17 +327,18 @@ export class BluetoothService {
     }
 
     async setFilterType(mode: number) {
-        // Assumed crossover filter command family for LPF / HPF selection.
-        await this.sendCommand([0x05, 0x00, mode]);
+        await this.sendCommand([0x05, mode]);
     }
 
     async setFilterFrequency(value: number) {
-        const val = Math.round(value);
-        await this.sendCommand([0x05, 0x01, val & 0xFF, (val >> 8) & 0xFF]);
+        // Corrected to 0x06 from manual
+        await this.sendCommand([0x06, Math.max(60, Math.min(200, Math.round(value)))]);
     }
 
     async setAutoOffThreshold(value: number) {
-        await this.sendCommand([0x06, Math.max(0, Math.min(100, Math.round(value)))]);
+        // Corrected to 0x09 from manual (0..3000)
+        const val = Math.round(value);
+        await this.sendCommand([0x09, val & 0xFF, (val >> 8) & 0xFF]);
     }
 
     async setReverb(id: number, val: number) {

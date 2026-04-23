@@ -15,67 +15,82 @@ export default function Home() {
       <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-blue-500/12 blur-3xl" />
       <div className="pointer-events-none absolute bottom-0 left-1/4 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
 
-      <header className="sticky top-0 z-50 border-b border-white/8 bg-[#07111ade]/80 px-4 py-3 backdrop-blur-2xl md:px-6 md:py-4">
-        <nav className="mx-auto flex max-w-7xl items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-400/15 text-cyan-100 shadow-[0_0_30px_rgba(84,211,255,0.18)]">
-              <Waves className="h-5 w-5" />
+      <header className="sticky top-0 z-50 border-b border-white/5 bg-[#050a0f]/80 px-4 py-3 backdrop-blur-3xl md:px-8 md:py-5">
+        <nav className="mx-auto flex max-w-7xl items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500/20 text-cyan-400 shadow-[0_0_30px_rgba(6,182,212,0.15)] ring-1 ring-cyan-400/20">
+              <div className="absolute inset-0 animate-pulse rounded-2xl bg-cyan-400/5 blur-lg" />
+              <Waves className="relative h-6 w-6" />
             </div>
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-cyan-200/80 md:text-xs md:tracking-[0.28em]">Brrowntech</p>
-              <p className="text-base font-black tracking-tight text-white md:text-lg">BP10 DSP</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-400/70 md:text-xs">Brrowntech</p>
+              <p className="text-lg font-black tracking-tighter text-white md:text-2xl">BP10 <span className="text-white/40 font-medium tracking-normal">DSP</span></p>
             </div>
           </div>
 
-          <Button variant="ghost" suppressHydrationWarning className="h-9 rounded-full px-3 text-xs text-white/60 hover:bg-white/5 hover:text-white md:h-10 md:px-4 md:text-sm">
-            Support
+          <div className="hidden md:flex items-center gap-8 mr-8">
+            {["Overview", "Interface", "Specs", "Support"].map((item) => (
+              <a key={item} href="#" className="text-xs font-bold uppercase tracking-widest text-white/40 transition-colors hover:text-cyan-400">{item}</a>
+            ))}
+          </div>
+
+          <Button variant="outline" className="h-10 rounded-full border-white/10 bg-white/5 px-6 text-xs font-bold uppercase tracking-widest text-white hover:bg-white/10 md:h-11">
+            Sign In
           </Button>
         </nav>
       </header>
 
-      <main className="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 pb-safe pt-4 md:gap-8 md:px-6 md:pb-20 md:pt-10">
-        <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-
-          {/* Bluetooth Connection Module - Shifted to TOP on mobile via order-first */}
-          <div className="order-first lg:order-last rounded-[1.75rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03))] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.24)] md:rounded-[2rem] md:p-8">
-            <div className="flex h-full flex-col justify-between gap-6">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.28em] text-cyan-400">Step 1: Link Device</p>
-                <h2 className="mt-2 text-xl font-black tracking-tight text-white md:mt-3 md:text-2xl">Connect and tune from your phone</h2>
-                <p className="mt-2 text-xs leading-5 text-white/55 md:text-sm md:leading-7">
-                  Chrome on Android allows native Web Bluetooth connectivity.
-                </p>
-              </div>
-
-              <div suppressHydrationWarning className="rounded-[1.5rem] border border-white/8 bg-black/20 p-4 md:rounded-[1.75rem] md:p-5 flex justify-center">
-                <BluetoothButton />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-[1.75rem] border border-white/8 bg-white/5 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.26)] md:rounded-[2rem] md:p-8">
-            <div className="inline-flex items-center rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-cyan-200 md:px-4 md:tracking-[0.28em]">
-              Mobile DSP Control
+      <main className="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 pb-safe pt-6 md:gap-10 md:px-8 md:pt-14">
+        <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="flex flex-col justify-center rounded-[2.5rem] border border-white/10 bg-white/4 p-6 shadow-[0_32px_100px_-20px_rgba(0,0,0,0.5)] md:p-12">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em] text-cyan-200">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+              </span>
+              Mobile Control Protocol
             </div>
 
-            <h1 className="mt-4 max-w-3xl text-3xl font-black leading-[0.95] tracking-tight text-white sm:text-4xl md:mt-5 md:text-6xl">
-              Faster access to every
-              <span className="block bg-[linear-gradient(90deg,#79e1ff_0%,#54b7ff_45%,#71ffc8_100%)] bg-clip-text text-transparent">
-                BP10 tuning control
+            <h1 className="mt-6 text-4xl font-black leading-[0.9] tracking-tight text-white sm:text-5xl md:mt-8 md:text-7xl lg:text-8xl">
+              Precision audio
+              <span className="block mt-2 bg-gradient-to-r from-cyan-400 via-blue-500 to-emerald-400 bg-clip-text text-transparent italic">
+                reimagined
               </span>
             </h1>
 
-            <p className="mt-4 max-w-2xl text-sm leading-6 text-white/55 md:mt-5 md:text-base md:leading-7">
-              Built for on-phone operation with larger tap targets, compact control groups, and a full DSP feature set.
+            <p className="mt-6 max-w-xl text-base leading-relaxed text-white/50 md:mt-8 md:text-lg md:leading-loose">
+              Experience total control over your BP10 sound engine with a touch-first dashboard designed for professional acoustic tuning on the go.
             </p>
 
-            <div className="mt-5 grid gap-3 md:mt-6 sm:grid-cols-3">
-              <QuickStat icon={Bluetooth} label="BLE pairing" value="One-tap connect" />
-              <QuickStat icon={SlidersHorizontal} label="Mixer + EQ" value="Touch-first controls" />
-              <QuickStat icon={Waves} label="FX + Filters" value="All in one deck" />
+            <div className="mt-8 grid gap-4 md:mt-10 sm:grid-cols-3">
+              <QuickStat icon={Bluetooth} label="Connectivity" value="Ultra Low Latency" />
+              <QuickStat icon={SlidersHorizontal} label="Processing" value="32-bit Floating" />
+              <QuickStat icon={Waves} label="Acoustics" value="Zero Distortion" />
             </div>
           </div>
 
+          {/* Bluetooth Connection Module */}
+          <div className="order-first lg:order-last flex flex-col items-center justify-center rounded-[2.5rem] border border-cyan-500/20 bg-[linear-gradient(225deg,rgba(0,180,216,0.08),rgba(0,0,0,0.1))] p-6 shadow-[0_32px_100px_-20px_rgba(0,0,0,0.6)] md:p-10">
+            <div className="relative mb-8 flex h-24 w-24 items-center justify-center md:h-32 md:w-32">
+              <div className="absolute inset-0 animate-slow-spin rounded-full border-2 border-dashed border-cyan-500/20" />
+              <div className="absolute inset-4 animate-reverse-spin rounded-full border border-white/5" />
+              <div className="relative flex h-16 w-16 items-center justify-center rounded-3xl bg-cyan-500/20 text-cyan-400 shadow-[0_0_40px_rgba(34,211,238,0.2)] md:h-20 md:w-20">
+                <Bluetooth className="h-8 w-8 md:h-10 md:w-10" />
+              </div>
+            </div>
+            
+            <div className="text-center">
+              <p className="text-[11px] font-black uppercase tracking-[0.3em] text-cyan-400">Step 1: Link</p>
+              <h2 className="mt-2 text-2xl font-black tracking-tight text-white md:text-3xl">Secure Discovery</h2>
+              <p className="mx-auto mt-3 max-w-xs text-sm leading-relaxed text-white/40">
+                Using native Web Bluetooth stack for direct hardware bridge. No driver installation required.
+              </p>
+            </div>
+
+            <div suppressHydrationWarning className="mt-8 w-full">
+              <BluetoothButton />
+            </div>
+          </div>
         </section>
 
         <section className="w-full">
