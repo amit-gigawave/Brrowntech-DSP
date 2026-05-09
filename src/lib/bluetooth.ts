@@ -18,13 +18,13 @@ export class BluetoothService {
 
     private async requestTargetDevice() {
         const bluetooth = (navigator as any).bluetooth;
-
-        console.log("Requesting broad discovery for BP10 device...");
+        console.log("Requesting BP10 Hardware (Filtered Discovery)...");
         
-        // Use a single request with acceptAllDevices so the popup only opens ONCE.
-        // This guarantees all nearby devices are listed, even if they hide their Service UUID.
         return await bluetooth.requestDevice({
-            acceptAllDevices: true,
+            filters: [
+                { services: [BluetoothService.SERVICE_UUID] },
+                { namePrefix: 'BP10' }
+            ],
             optionalServices: [
                 BluetoothService.SERVICE_UUID,
                 "device_information",
@@ -56,79 +56,44 @@ export class BluetoothService {
             this.isWriting = false;
             this.characteristic = null;
 
-            if (this.device?.gatt?.connected) {
-                await this.device.gatt.disconnect().catch(() => null);
-            }
-
             this.device = await this.requestTargetDevice();
-
-            console.log(`Connecting to: ${this.device.name || 'Unknown Device'}...`);
+            console.log(`Hardware Handshake: ${this.device.name}`);
             
-            if (!this.device.gatt) throw new Error("GATT Interface not found on device.");
-
-            // FIX: If GATT hangs because Android has locked the device (e.g., actively paired for audio),
-            // this timeout breaks the infinite spinner and warns the user exactly how to fix it!
-            const gattConnectPromise = this.device.gatt.connect();
-            const gattTimeoutPromise = new Promise<any>((_, reject) => 
-                setTimeout(() => reject(new Error("GATT_HANG")), 10000)
-            );
-
-            const server = await Promise.race([gattConnectPromise, gattTimeoutPromise]).catch(err => {
-                if (err.message === "GATT_HANG") {
-                    throw new Error("Phone hardware locked the connection! \n\nFIX: Go to your phone's Bluetooth Settings, click 'Forget' or 'Unpair' on the BP10 device, and try again.");
-                }
-                throw err;
-            });
-
+            const server = await this.device.gatt?.connect();
             if (!server) throw new Error("GATT Bridge Failure");
 
-            // Helper to handle 16-bit vs 128-bit UUID variations across browsers
             const normalize = (uuid: string) => uuid.replace(/-/g, '').toLowerCase();
-            const targetServiceNorm = normalize(BluetoothService.SERVICE_UUID);
             const targetCharNorm = normalize(BluetoothService.CHARACTERISTIC_UUID);
 
-            console.log("BLE Scanner Emulation: Performing deep discovery walk...");
-            await new Promise(r => setTimeout(r, 400));
+            console.log("Exhaustive GATT Discovery Initialized...");
+            await new Promise(r => setTimeout(r, 600));
 
-            try {
-                const services = await server.getPrimaryServices();
-                for (const service of services) {
-                    const currentServiceNorm = normalize(service.uuid);
-                    console.log(`Analyzing Service: ${service.uuid}`);
+            const services = await server.getPrimaryServices();
+            for (const service of services) {
+                console.log(`[SERVICE] Discovered: ${service.uuid}`);
+                const characteristics = await service.getCharacteristics();
+                
+                for (const char of characteristics) {
+                    const currentCharNorm = normalize(char.uuid);
+                    const props = Object.keys(char.properties).filter(p => (char.properties as any)[p]).join(', ');
+                    console.log(`  [CHAR] Found: ${char.uuid} (${props})`);
                     
-                    const characteristics = await service.getCharacteristics();
-                    for (const char of characteristics) {
-                        const currentCharNorm = normalize(char.uuid);
-                        
-                        // Smart Match: Check if current char matches our target in any format
-                        if (currentCharNorm === targetCharNorm || currentCharNorm.includes('ab01')) {
-                            console.log(`>>> Target Verified: ${char.uuid}`);
-                            this.characteristic = char;
-                        }
-                        
-                        // Poke the handle to keep the connection alive
-                        if (char.properties.read) {
-                            await char.readValue().catch(() => null);
-                        }
+                    if (currentCharNorm === targetCharNorm || currentCharNorm.includes('ab01')) {
+                        console.log(`>>> TARGET IDENTIFIED: ${char.uuid}`);
+                        this.characteristic = char;
                     }
                 }
-            } catch (deepWalkError) {
-                console.warn("Discovery walk partial failure, trying direct access...", deepWalkError);
             }
 
-            // Final direct attempt if discovery loop missed the characteristic
             if (!this.characteristic) {
+                console.warn("Target 0xAB01 not found. Attempting fuzzy fallback...");
                 try {
-                    const service = await server.getPrimaryService(BluetoothService.SERVICE_UUID);
-                    this.characteristic = await service.getCharacteristic(BluetoothService.CHARACTERISTIC_UUID);
+                    const mainService = await server.getPrimaryService(BluetoothService.SERVICE_UUID);
+                    const allChars = await mainService.getCharacteristics();
+                    this.characteristic = allChars.find(c => c.properties.write || c.properties.writeWithoutResponse);
+                    if (this.characteristic) console.log(`Fuzzy Success: Using ${this.characteristic.uuid}`);
                 } catch (e) {
-                    // Try short-form fallback for some mobile stacks
-                    try {
-                        const service = await server.getPrimaryService(0xAB00);
-                        this.characteristic = await service.getCharacteristic(0xAB01);
-                    } catch (e2) {
-                        console.error("Direct fetch failed", e2);
-                    }
+                    console.error("Fuzzy fallback failed", e);
                 }
             }
 
