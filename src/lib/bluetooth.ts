@@ -84,46 +84,45 @@ export class BluetoothService {
 
             console.log("BLE Scanner Emulation: Performing deep discovery walk...");
             
-            // MAGIC FIX: We must mimic a BLE Scanner app to 'wake up' the MVsilicon bridge properly.
-            // By requesting all services and fetching all characteristics, we force the chip to
-            // initialize its internal UART queues, preventing the 'one command only' freeze.
+            // Give the GATT server a moment to prepare its attribute table
+            await new Promise(r => setTimeout(r, 300));
+
             try {
                 const services = await server.getPrimaryServices();
                 for (const service of services) {
-                    console.log(`Discovered service: ${service.uuid}`);
+                    // Match Service UUID case-insensitively
+                    const isTargetService = service.uuid.toLowerCase() === BluetoothService.SERVICE_UUID.toLowerCase();
+                    
+                    console.log(`Discovered service: ${service.uuid} ${isTargetService ? '[TARGET]' : ''}`);
                     const characteristics = await service.getCharacteristics();
                     
                     for (const char of characteristics) {
-                        // Identify our target control endpoint
-                        if (char.uuid === BluetoothService.CHARACTERISTIC_UUID) {
+                        // Match Characteristic UUID case-insensitively
+                        if (char.uuid.toLowerCase() === BluetoothService.CHARACTERISTIC_UUID.toLowerCase()) {
+                            console.log(`Found target characteristic: ${char.uuid}`);
                             this.characteristic = char;
                         }
                         
-                        // Wake up the attribute by touching its read property if available
+                        // Touch the characteristic to wake it up
                         if (char.properties.read) {
                             await char.readValue().catch(() => null);
                         }
                         
-                        // Subscribe to all notifications like a scanner does
-                        if (char.properties.notify || char.properties.indicate) {
-                            if (char.uuid === BluetoothService.CHARACTERISTIC_UUID) {
-                                char.addEventListener('characteristicvaluechanged', (event: any) => {
-                                    const val = event.target?.value;
-                                    if (val) console.log(`[HARDWARE] <== ACK RECEIVED (${val.byteLength} bytes)`);
-                                });
-                            }
-                            await char.startNotifications().catch(() => null);
-                        }
-                        
-                        // Small delay to prevent mobile browser NetworkErrors during intense discovery
-                        await new Promise(r => setTimeout(r, 60)); 
+                        // Small delay to prevent mobile browser GATT congestion
+                        await new Promise(r => setTimeout(r, 50)); 
                     }
                 }
             } catch (deepWalkError) {
-                console.warn("Deep discovery walk interrupted, but bridge may still be active.", deepWalkError);
-                if (!this.characteristic) {
-                    const mainService = await server.getPrimaryService(BluetoothService.SERVICE_UUID);
-                    this.characteristic = await mainService.getCharacteristic(BluetoothService.CHARACTERISTIC_UUID);
+                console.warn("Discovery interrupted, attempting direct fallback...", deepWalkError);
+            }
+
+            // Final attempt: Direct fetch if the deep walk missed it
+            if (!this.characteristic) {
+                try {
+                    const mainService = await server.getPrimaryService(BluetoothService.SERVICE_UUID.toLowerCase());
+                    this.characteristic = await mainService.getCharacteristic(BluetoothService.CHARACTERISTIC_UUID.toLowerCase());
+                } catch (fallbackError) {
+                    console.error("Direct characteristic fetch failed", fallbackError);
                 }
             }
 
