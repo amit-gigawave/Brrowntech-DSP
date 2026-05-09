@@ -195,10 +195,9 @@ export class BluetoothService {
     async sendCommand(bytes: number[]) {
         if (!this.characteristic && !this.isSimulated) return;
 
-        // BP10 Protocol requires 0x0D 0x0A (CRLF) termination
-        const payload = [...bytes, 0x0D, 0x0A];
-        const packet = new Uint8Array(payload.length);
-        packet.set(payload);
+        // Raw binary instruction: No CRLF, no padding.
+        const packet = new Uint8Array(bytes.length);
+        packet.set(bytes);
 
         // Smart De-duplication Logic
         if (bytes.length >= 2) {

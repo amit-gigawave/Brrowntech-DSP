@@ -13,7 +13,12 @@ The system utilizes a **Client-Side Binary Bridge** built on the Web Bluetooth G
 
 ## 2. Command Frame Anatomy
 
-Every transmission to the DSP hardware follows a **Manual-Compliant Variable-Length Frame** that strictly matches the command payload plus a mandatory hardware "Execute" signal.
+Every transmission to the DSP hardware follows a **Strict Variable-Length Frame**. The payload contains **only the instruction bytes** as specified in the BP10 manual. 
+
+### **Packet Structure Details**
+- **No Terminators**: The system does not append Carriage Return (`0x0D`) or New Line (`0x0A`).
+- **No Padding**: Packets are precisely the length of the binary instruction.
+- **Example (Volume Command)**: `[0x02, 0x01, 0x0A]` (Exactly 3 bytes transmitted).
 
 ### **Final Hardware Discovery Specifications**
 | Type | Value |
@@ -24,13 +29,12 @@ Every transmission to the DSP hardware follows a **Manual-Compliant Variable-Len
 
 ---
 
-## 3. Client Discovery Questions (Meeting Agenda)
+## 3. Protocol Verification
 
-The following core hardware questions remain open for the engineering review:
+The hardware is now configured for high-performance direct-binary writes. During testing, verify:
 
-1.  **Hex vs ASCII Encoding**: Does the hardware respond better to a **Raw Byte Array** `[0x02, 0x01, 0x0A]` or the **ASCII Text equivalent** `"02010A"`?
-2.  **Command Headers**: Does the protocol require a **Header Sync Byte** (e.g., `0xAA` or `0x55`) at the start of every message before the Command ID?
-3.  **Checksum Requirements**: Is there a **Checksum** or **CRC** byte required at the end of the packet for data validation?
+1.  **Instruction Response**: Ensure the device executes the command immediately upon receiving the final byte of the instruction.
+2.  **Hex vs ASCII Encoding**: Confirm that the device's internal UART is correctly interpreting the raw `Uint8Array` rather than expecting a text-encoded hex string.
 
 ---
 
