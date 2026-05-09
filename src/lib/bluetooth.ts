@@ -82,47 +82,53 @@ export class BluetoothService {
 
             if (!server) throw new Error("GATT Bridge Failure");
 
+            // Helper to handle 16-bit vs 128-bit UUID variations across browsers
+            const normalize = (uuid: string) => uuid.replace(/-/g, '').toLowerCase();
+            const targetServiceNorm = normalize(BluetoothService.SERVICE_UUID);
+            const targetCharNorm = normalize(BluetoothService.CHARACTERISTIC_UUID);
+
             console.log("BLE Scanner Emulation: Performing deep discovery walk...");
-            
-            // Give the GATT server a moment to prepare its attribute table
-            await new Promise(r => setTimeout(r, 300));
+            await new Promise(r => setTimeout(r, 400));
 
             try {
                 const services = await server.getPrimaryServices();
                 for (const service of services) {
-                    // Match Service UUID case-insensitively
-                    const isTargetService = service.uuid.toLowerCase() === BluetoothService.SERVICE_UUID.toLowerCase();
+                    const currentServiceNorm = normalize(service.uuid);
+                    console.log(`Analyzing Service: ${service.uuid}`);
                     
-                    console.log(`Discovered service: ${service.uuid} ${isTargetService ? '[TARGET]' : ''}`);
                     const characteristics = await service.getCharacteristics();
-                    
                     for (const char of characteristics) {
-                        // Match Characteristic UUID case-insensitively
-                        if (char.uuid.toLowerCase() === BluetoothService.CHARACTERISTIC_UUID.toLowerCase()) {
-                            console.log(`Found target characteristic: ${char.uuid}`);
+                        const currentCharNorm = normalize(char.uuid);
+                        
+                        // Smart Match: Check if current char matches our target in any format
+                        if (currentCharNorm === targetCharNorm || currentCharNorm.includes('ab01')) {
+                            console.log(`>>> Target Verified: ${char.uuid}`);
                             this.characteristic = char;
                         }
                         
-                        // Touch the characteristic to wake it up
+                        // Poke the handle to keep the connection alive
                         if (char.properties.read) {
                             await char.readValue().catch(() => null);
                         }
-                        
-                        // Small delay to prevent mobile browser GATT congestion
-                        await new Promise(r => setTimeout(r, 50)); 
                     }
                 }
             } catch (deepWalkError) {
-                console.warn("Discovery interrupted, attempting direct fallback...", deepWalkError);
+                console.warn("Discovery walk partial failure, trying direct access...", deepWalkError);
             }
 
-            // Final attempt: Direct fetch if the deep walk missed it
+            // Final direct attempt if discovery loop missed the characteristic
             if (!this.characteristic) {
                 try {
-                    const mainService = await server.getPrimaryService(BluetoothService.SERVICE_UUID.toLowerCase());
-                    this.characteristic = await mainService.getCharacteristic(BluetoothService.CHARACTERISTIC_UUID.toLowerCase());
-                } catch (fallbackError) {
-                    console.error("Direct characteristic fetch failed", fallbackError);
+                    const service = await server.getPrimaryService(BluetoothService.SERVICE_UUID);
+                    this.characteristic = await service.getCharacteristic(BluetoothService.CHARACTERISTIC_UUID);
+                } catch (e) {
+                    // Try short-form fallback for some mobile stacks
+                    try {
+                        const service = await server.getPrimaryService(0xAB00);
+                        this.characteristic = await service.getCharacteristic(0xAB01);
+                    } catch (e2) {
+                        console.error("Direct fetch failed", e2);
+                    }
                 }
             }
 
