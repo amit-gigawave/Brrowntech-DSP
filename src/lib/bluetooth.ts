@@ -90,7 +90,7 @@ export class BluetoothService {
                 try {
                     const mainService = await server.getPrimaryService(BluetoothService.SERVICE_UUID);
                     const allChars = await mainService.getCharacteristics();
-                    this.characteristic = allChars.find(c => c.properties.write || c.properties.writeWithoutResponse);
+                    this.characteristic = allChars.find((c: any) => c.properties.write || c.properties.writeWithoutResponse);
                     if (this.characteristic) console.log(`Fuzzy Success: Using ${this.characteristic.uuid}`);
                 } catch (e) {
                     console.error("Fuzzy fallback failed", e);
