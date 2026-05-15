@@ -21,7 +21,7 @@ const DebugConsole = () => {
             <div className="fixed bottom-6 right-6 z-50">
                 <button 
                     onClick={simulateConnect}
-                    className="flex items-center gap-2 px-6 py-3 bg-blue-600/20 border border-blue-500/40 text-blue-400 rounded-full hover:bg-blue-600/30 transition-all font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-500/10"
+                    className="flex items-center gap-2 px-6 py-3 bg-yellow-600/20 border border-yellow-500/40 text-yellow-400 rounded-full hover:bg-yellow-600/30 transition-all font-black text-xs uppercase tracking-widest shadow-lg shadow-yellow-500/10"
                 >
                     <Zap className="w-4 h-4" /> Start Virtual Simulation
                 </button>
@@ -38,7 +38,7 @@ const DebugConsole = () => {
                     onClick={() => setIsExpanded(!isExpanded)}
                 >
                     <div className="flex items-center gap-3">
-                        <Terminal className="w-4 h-4 text-blue-400" />
+                        <Terminal className="w-4 h-4 text-yellow-400" />
                         <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/60">
                             Protocol Debugger • {isConnected ? "Hardware Active" : "Simulated"}
                         </span>
@@ -60,9 +60,9 @@ const DebugConsole = () => {
                                     key={i + log}
                                     initial={{ opacity: 0, x: -20 }}
                                     animate={{ opacity: 1, x: 0 }}
-                                    className="flex items-start gap-4 p-3 rounded-xl bg-white/2 border border-white/5 group hover:border-blue-500/20 transition-colors"
+                                    className="flex items-start gap-4 p-3 rounded-xl bg-white/2 border border-white/5 group hover:border-yellow-500/20 transition-colors"
                                 >
-                                    <div className="text-blue-500/40 text-[10px] pt-1">
+                                    <div className="text-yellow-500/40 text-[10px] pt-1">
                                         [{new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}]
                                     </div>
                                     <div className="flex-1 text-white/80 break-all leading-relaxed tracking-wider">

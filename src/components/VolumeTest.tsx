@@ -30,13 +30,13 @@ const VolumeTest = () => {
             animate={{ opacity: 1, scale: 1 }}
             className="w-full max-w-md mx-auto"
         >
-            <Card className={`glass-dark border-white/10 ${!isConnected ? 'opacity-50 grayscale' : 'shadow-blue-500/10 shadow-2xl'}`}>
+            <Card className={`glass-dark border-white/10 ${!isConnected ? 'opacity-50 grayscale' : 'shadow-yellow-500/10 shadow-2xl'}`}>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium text-white/70">
                         {isConnected ? `Testing: ${deviceName}` : "Device Not Connected"}
                     </CardTitle>
                     {isConnected ? (
-                        <Volume2 className="h-4 w-4 text-blue-400" />
+                        <Volume2 className="h-4 w-4 text-yellow-400" />
                     ) : (
                         <ShieldAlert className="h-4 w-4 text-red-500" />
                     )}

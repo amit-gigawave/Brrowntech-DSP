@@ -59,7 +59,7 @@ const BluetoothButton = () => {
                                 duration: isConnected ? 3 : 1.5,
                                 ease: "easeInOut"
                             }}
-                            className={`absolute inset-0 rounded-full ${isConnected ? 'bg-green-500' : 'bg-blue-500'}`}
+                            className={`absolute inset-0 rounded-full ${isConnected ? 'bg-green-500' : 'bg-yellow-500'}`}
                         />
                     )}
                 </AnimatePresence>
@@ -69,7 +69,7 @@ const BluetoothButton = () => {
                     disabled={isScanning}
                     className={`
                         relative z-10 w-24 h-24 rounded-3xl shadow-2xl transition-all duration-500
-                        ${isConnected ? 'bg-green-600/20 backdrop-blur-xl border-green-500/50 hover:bg-red-600/20 group' : 'bg-linear-to-br from-blue-500/80 to-indigo-600/80 hover:shadow-blue-500/40 cursor-pointer border-white/20'}
+                        ${isConnected ? 'bg-green-600/20 backdrop-blur-xl border-green-500/50 hover:bg-red-600/20 group' : 'bg-linear-to-br from-yellow-500/80 to-orange-600/80 hover:shadow-yellow-500/40 cursor-pointer border-white/20'}
                         flex items-center justify-center active:scale-95 overflow-hidden
                     `}
                 >
@@ -112,7 +112,7 @@ const BluetoothButton = () => {
                         animate={{ opacity: 0.5 }}
                         className="text-white/60 text-sm font-medium tracking-wide flex items-center gap-2"
                     >
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
                         Ready to Connect
                     </motion.p>
                 )}

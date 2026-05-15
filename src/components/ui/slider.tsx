@@ -39,7 +39,7 @@ const Slider = React.forwardRef<HTMLInputElement, SliderProps>(
             )}>
                 {/* Visual Value Badge (Vertical only) */}
                 {orientation === "vertical" && (
-                    <div className="absolute -top-6 text-[10px] font-black text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20 shadow-lg shadow-blue-500/20">
+                    <div className="absolute -top-6 text-[10px] font-black text-yellow-400 opacity-0 group-hover:opacity-100 transition-opacity bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20 shadow-lg shadow-yellow-500/20">
                         {currentValue.toFixed(1)}
                     </div>
                 )}
@@ -67,7 +67,7 @@ const Slider = React.forwardRef<HTMLInputElement, SliderProps>(
                 )}>
                     {/* Fill Level */}
                     <div 
-                        className="bg-linear-to-t from-blue-600 via-indigo-500 to-cyan-400 shadow-[0_0_20px_rgba(59,130,246,0.4)] rounded-full transition-all duration-150" 
+                        className="bg-linear-to-t from-yellow-600 via-orange-500 to-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.4)] rounded-full transition-all duration-150" 
                         style={orientation === "vertical" ? {
                             height: `${percentage}%`,
                             width: '100%',
@@ -86,8 +86,8 @@ const Slider = React.forwardRef<HTMLInputElement, SliderProps>(
                 <div 
                     className={cn(
                         "absolute z-20 transition-all duration-150 pointer-events-none",
-                        "w-4 h-4 bg-white rounded-full shadow-[0_0_15px_rgba(255,255,255,0.4),0_0_30px_rgba(59,130,246,0.6)] border-2 border-blue-500",
-                        "flex items-center justify-center after:content-[''] after:w-1.5 after:h-1.5 after:bg-blue-600 after:rounded-full group-hover:scale-125"
+                        "w-4 h-4 bg-white rounded-full shadow-[0_0_15px_rgba(255,255,255,0.4),0_0_30px_rgba(250,204,21,0.6)] border-2 border-yellow-500",
+                        "flex items-center justify-center after:content-[''] after:w-1.5 after:h-1.5 after:bg-yellow-600 after:rounded-full group-hover:scale-125"
                     )}
                     style={orientation === "vertical" ? {
                         bottom: `calc(${percentage}% - 8px)`,
