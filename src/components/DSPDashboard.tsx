@@ -167,8 +167,8 @@ const DSPDashboard = () => {
 
                     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                         {/* TAB NAVIGATION: Fixed Bottom on Mobile, Relative on Desktop */}
-                        <div className="fixed bottom-0 left-0 right-0 z-50 animate-in fade-in slide-in-from-bottom-4 duration-500 border-t border-white/8 bg-[#0a1219]/95 px-1.5 pb-safe pt-2 backdrop-blur-3xl md:relative md:bottom-auto md:mb-10 md:border-none md:bg-transparent md:p-0">
-                            <TabsList className="flex h-16 w-full items-stretch gap-0 rounded-[2.5rem] bg-white/4 p-1.5 px-2 md:h-14 md:w-max md:gap-2 md:rounded-3xl md:px-2">
+                        <div className="fixed bottom-0 left-0 right-0 z-50 animate-in fade-in slide-in-from-bottom-4 duration-500 border-t border-white/8 bg-[#0a1219]/95 px-2 pb-6 pt-2 backdrop-blur-3xl md:relative md:bottom-auto md:mb-10 md:border-none md:bg-transparent md:p-0">
+                            <TabsList className="flex !h-[4.5rem] w-full items-stretch gap-1 rounded-[2.5rem] bg-white/4 p-1.5 px-1.5 md:!h-14 md:w-max md:gap-2 md:rounded-3xl md:px-2">
                                 <TabChip value="routing" active={activeTab === "routing"} icon={SlidersHorizontal} label="Mixer" />
                                 <TabChip value="eq" active={activeTab === "eq"} icon={Equal} label="EQ" />
                                 <TabChip value="filters" active={activeTab === "filters"} icon={Layers} label="Cross" />
@@ -337,9 +337,16 @@ const DSPDashboard = () => {
 
 function TabChip({ value, active, icon: Icon, label }: any) {
     return (
-        <TabsTrigger value={value} className={`flex flex-1 flex-col items-center justify-center gap-1 px-1 rounded-3xl transition-all duration-300 md:flex-none md:flex-row md:py-3 md:px-4 ${active ? "bg-yellow-500/20 text-yellow-400 shadow-[inset_0_0_0_1px_rgba(250,204,21,0.2)]" : "text-white/30 hover:text-white/60 hover:bg-white/5"}`}>
-            <Icon className={`h-5 w-5 md:h-4 md:w-4 ${active ? "opacity-100" : "opacity-50"}`} />
-            <span className="text-[8px] font-black uppercase tracking-wider md:text-xs md:tracking-[0.2em]">{label}</span>
+        <TabsTrigger 
+            value={value} 
+            className={`flex flex-1 flex-col items-center justify-center gap-1.5 rounded-3xl transition-all duration-300 md:flex-none md:flex-row md:py-3 md:px-4 !h-full border-none outline-none dark:data-active:border-none ${
+                active 
+                    ? "!bg-yellow-500/20 !text-yellow-400 shadow-[inset_0_0_0_1px_rgba(250,204,21,0.3)]" 
+                    : "!bg-transparent shadow-none text-white/40 hover:text-white/80 hover:!bg-white/5"
+            }`}
+        >
+            <Icon className={`h-[18px] w-[18px] md:h-4 md:w-4 ${active ? "opacity-100" : "opacity-50"}`} />
+            <span className="text-[9px] font-black uppercase tracking-wider md:text-xs md:tracking-[0.2em]">{label}</span>
         </TabsTrigger>
     );
 }

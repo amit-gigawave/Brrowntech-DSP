@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 import { Providers } from "@/components/Providers";
@@ -34,6 +35,12 @@ export default function RootLayout({
         <Providers>
           {children}
         </Providers>
+        
+        {/* Mobile Debug Console */}
+        <Script src="https://cdn.jsdelivr.net/npm/eruda" strategy="beforeInteractive" />
+        <Script id="eruda-init" strategy="afterInteractive">
+          {`if (typeof window !== 'undefined') { window.onload = function() { if (typeof eruda !== 'undefined') eruda.init(); } }`}
+        </Script>
       </body>
     </html>
   );

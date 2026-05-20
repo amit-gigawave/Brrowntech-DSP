@@ -187,6 +187,9 @@ export class BluetoothService {
 
         // UI Feedback
         const hex = Array.from(packet).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+        
+        console.log(`[Monitor] Sending command - Decimal: [${bytes.join(', ')}], Hex: ${hex}`);
+        
         this.onCommandSent?.(hex);
 
         if (!this.isWriting) this.processQueue();
