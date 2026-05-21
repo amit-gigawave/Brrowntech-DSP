@@ -38,9 +38,7 @@ export default function RootLayout({
         
         {/* Mobile Debug Console */}
         <Script src="https://cdn.jsdelivr.net/npm/eruda" strategy="beforeInteractive" />
-        <Script id="eruda-init" strategy="afterInteractive">
-          {`if (typeof window !== 'undefined') { window.onload = function() { if (typeof eruda !== 'undefined') eruda.init(); } }`}
-        </Script>
+        <Script id="eruda-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: `if (typeof eruda !== 'undefined') eruda.init();` }} />
       </body>
     </html>
   );
